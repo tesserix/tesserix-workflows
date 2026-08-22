@@ -182,14 +182,14 @@ jobs:
           LINT_SUPPRESSIONS_PATH: ${{ inputs.lint_suppressions_path }}
           PACKAGE_MANAGER: ${{ inputs.package_manager }}
         run: |
-          lint_args=()
           if [[ -n "$LINT_SUPPRESSIONS_PATH" ]]; then
-            lint_args+=(-- --suppressions-location "$GITHUB_WORKSPACE/$LINT_SUPPRESSIONS_PATH" --prune-suppressions)
-          fi
-          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
-            npm run lint "${lint_args[@]}"
+            npx eslint . \
+              --suppressions-location "$GITHUB_WORKSPACE/$LINT_SUPPRESSIONS_PATH" \
+              --prune-suppressions
+          elif [[ "$PACKAGE_MANAGER" == "npm" ]]; then
+            npm run lint
           else
-            pnpm run lint "${lint_args[@]}"
+            pnpm run lint
           fi
 
       - name: Test
