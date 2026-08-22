@@ -17,14 +17,21 @@ repeatable implementation of quality, security, and image-supply-chain gates.
 
 ## Caller contract
 
-Callers pin an immutable semantic release such as `v2.0.0`; they never use
+Callers pin an immutable semantic release such as `v2.1.0`; they never use
 `main`. Inputs describe intent and repository layout, not shell commands:
 
 - enabled language capabilities and their working directories;
 - toolchain versions and coverage floors;
 - an immutable database image and validated bootstrap-script path when needed;
-- a JSON image matrix containing Dockerfiles, build arguments, and smoke paths;
+- a JSON image matrix containing Dockerfiles, optional targets, source roots,
+  public build arguments, product-owned Trivy exceptions, and smoke paths;
 - an explicitly mapped read-only npm token when private packages are used.
+
+Container callers may also map a private registry token, a package token, one
+protected application build secret, and up to eight values that are public by
+definition once baked into an image. The protected values are mounted through
+BuildKit secrets and never accepted as build arguments. Callers map public
+values to the fixed `REUSABLE_PUBLIC_BUILD_ARG_*` interface in their Dockerfile.
 
 Repository-specific coverage baselines, advisory exceptions, schema bootstrap,
 and image names remain with the product. Standard package scripts are the

@@ -8,9 +8,43 @@ on:
         type: string
         required: true
       images:
-        description: JSON matrix with name, context, dockerfile, build_args, smoke_port, and smoke_path
+        description: JSON matrix describing product-owned image contracts
         type: string
         required: true
+    secrets:
+      registry_token:
+        description: Optional registry token; defaults to the workflow token
+        required: false
+      package_read_token:
+        description: Optional package token exposed as BuildKit secret PACKAGE_READ_TOKEN
+        required: false
+      application_build_secret:
+        description: Optional application secret exposed as BuildKit secret APPLICATION_BUILD_SECRET
+        required: false
+      public_build_arg_1:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_1
+        required: false
+      public_build_arg_2:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_2
+        required: false
+      public_build_arg_3:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_3
+        required: false
+      public_build_arg_4:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_4
+        required: false
+      public_build_arg_5:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_5
+        required: false
+      public_build_arg_6:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_6
+        required: false
+      public_build_arg_7:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_7
+        required: false
+      public_build_arg_8:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_8
+        required: false
 
 permissions:
   contents: read
@@ -50,17 +84,40 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.registry_token || github.token }}
 
       - name: Validate image contract
         env:
           IMAGE_NAME: ${{ matrix.name }}
+          IMAGE_TARGET: ${{ matrix.target }}
+          SOURCE_ROOT: ${{ matrix.source_root }}
           SMOKE_PATH: ${{ matrix.smoke_path }}
           SMOKE_PORT: ${{ matrix.smoke_port }}
+          TRIVY_IGNORE_FILE: ${{ matrix.trivy_ignore_file }}
         run: |
           [[ "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]*$ ]]
+          [[ -z "$IMAGE_TARGET" || "$IMAGE_TARGET" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]
+          [[ -z "$SOURCE_ROOT" || "$SOURCE_ROOT" != *[[:space:]]* ]]
           [[ "$SMOKE_PORT" =~ ^[0-9]+$ ]]
           [[ "$SMOKE_PATH" == /* && "$SMOKE_PATH" != *[[:space:]]* ]]
+          [[ -z "$TRIVY_IGNORE_FILE" || -f "$TRIVY_IGNORE_FILE" ]]
+
+      - name: Prepare protected build inputs
+        id: build-inputs
+        env:
+          APPLICATION_BUILD_SECRET: ${{ secrets.application_build_secret }}
+          REQUIRES_APPLICATION_BUILD_SECRET: ${{ matrix.requires_application_build_secret == true }}
+        run: |
+          if [[ "$REQUIRES_APPLICATION_BUILD_SECRET" == "true" && -z "$APPLICATION_BUILD_SECRET" ]]; then
+            echo "::error::Required application build secret is not configured"
+            exit 1
+          fi
+          if [[ -n "$APPLICATION_BUILD_SECRET" ]]; then
+            fingerprint=$(printf '%s' "$APPLICATION_BUILD_SECRET" | sha256sum | cut -c1-16)
+          else
+            fingerprint=none
+          fi
+          echo "secret_fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
       - name: Build, attest, and publish
         id: build
@@ -68,8 +125,22 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
           push: true
-          build-args: ${{ matrix.build_args }}
+          build-args: |
+            ${{ matrix.build_args }}
+            REUSABLE_BUILD_SECRET_FP=${{ steps.build-inputs.outputs.secret_fingerprint }}
+            REUSABLE_PUBLIC_BUILD_ARG_1=${{ secrets.public_build_arg_1 }}
+            REUSABLE_PUBLIC_BUILD_ARG_2=${{ secrets.public_build_arg_2 }}
+            REUSABLE_PUBLIC_BUILD_ARG_3=${{ secrets.public_build_arg_3 }}
+            REUSABLE_PUBLIC_BUILD_ARG_4=${{ secrets.public_build_arg_4 }}
+            REUSABLE_PUBLIC_BUILD_ARG_5=${{ secrets.public_build_arg_5 }}
+            REUSABLE_PUBLIC_BUILD_ARG_6=${{ secrets.public_build_arg_6 }}
+            REUSABLE_PUBLIC_BUILD_ARG_7=${{ secrets.public_build_arg_7 }}
+            REUSABLE_PUBLIC_BUILD_ARG_8=${{ secrets.public_build_arg_8 }}
+          secrets: |
+            PACKAGE_READ_TOKEN=${{ secrets.package_read_token }}
+            APPLICATION_BUILD_SECRET=${{ secrets.application_build_secret }}
           tags: |
             ghcr.io/${{ inputs.namespace }}/${{ matrix.name }}:main-${{ steps.sha.outputs.short }}
             ghcr.io/${{ inputs.namespace }}/${{ matrix.name }}:sha-${{ github.sha }}
@@ -77,6 +148,7 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.title=${{ matrix.name }}
+            dev.tesserix.source.root=${{ matrix.source_root }}
           cache-from: type=gha,scope=main-${{ matrix.name }}
           cache-to: type=gha,scope=main-${{ matrix.name }},mode=max
           sbom: true
@@ -105,6 +177,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
+          trivyignores: ${{ matrix.trivy_ignore_file }}
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 

@@ -100,6 +100,8 @@ class ReusableWorkflowContract(unittest.TestCase):
             "nextjs-ci.yml",
             "actions/setup-node@",
             "npm ci",
+            "legacy_peer_dependencies:",
+            "npm ci --legacy-peer-deps",
             "npm run format:check",
             "npm run lint",
             "npm test",
@@ -117,6 +119,13 @@ class ReusableWorkflowContract(unittest.TestCase):
             "aquasecurity/trivy-action@",
             "severity: CRITICAL,HIGH",
             "exit-code: 1",
+            "target: ${{ matrix.target }}",
+            "dev.tesserix.source.root=${{ matrix.source_root }}",
+            "trivyignores: ${{ matrix.trivy_ignore_file }}",
+            "PACKAGE_READ_TOKEN=${{ secrets.package_read_token }}",
+            "APPLICATION_BUILD_SECRET=${{ secrets.application_build_secret }}",
+            "REUSABLE_BUILD_SECRET_FP",
+            "REUSABLE_PUBLIC_BUILD_ARG_8=${{ secrets.public_build_arg_8 }}",
         )
         self.assert_workflow_contains(
             "container-release.yml",
@@ -127,6 +136,13 @@ class ReusableWorkflowContract(unittest.TestCase):
             "Smoke test published image",
             "steps.build.outputs.digest",
             "cosign sign --yes",
+            "target: ${{ matrix.target }}",
+            "dev.tesserix.source.root=${{ matrix.source_root }}",
+            "trivyignores: ${{ matrix.trivy_ignore_file }}",
+            "PACKAGE_READ_TOKEN=${{ secrets.package_read_token }}",
+            "APPLICATION_BUILD_SECRET=${{ secrets.application_build_secret }}",
+            "REUSABLE_BUILD_SECRET_FP",
+            "REUSABLE_PUBLIC_BUILD_ARG_8=${{ secrets.public_build_arg_8 }}",
         )
 
     def test_secret_scan_is_a_single_reusable_gate(self) -> None:
@@ -148,6 +164,10 @@ class ReusableWorkflowContract(unittest.TestCase):
             "./.github/workflows/secret-scan.yml",
             "name: CI gate",
             "needs.*.result",
+            "nextjs_legacy_peer_dependencies:",
+            "container_registry_token:",
+            "container_application_build_secret:",
+            "container_public_build_arg_8:",
         )
 
     def test_external_actions_are_pinned_to_full_commit_shas(self) -> None:
@@ -186,7 +206,7 @@ class ReusableWorkflowContract(unittest.TestCase):
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertLessEqual(len(meaningful), 45)
                 self.assertIn("tesserix/tesserix-workflows/", workflow)
-                self.assertIn("@v2.0.0", workflow)
+                self.assertIn("@v2.1.0", workflow)
                 self.assertNotIn("@main", workflow)
 
     def test_architecture_decision_records_migration_and_rollback(self) -> None:

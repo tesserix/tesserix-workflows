@@ -11,6 +11,10 @@ on:
         description: Node.js runtime version
         type: string
         default: "22"
+      legacy_peer_dependencies:
+        description: Install the locked dependency tree using legacy peer resolution
+        type: boolean
+        default: false
     secrets:
       package_read_token:
         description: Optional read-only token for private npm packages
@@ -39,7 +43,13 @@ jobs:
       - name: Install locked dependencies
         env:
           NODE_AUTH_TOKEN: ${{ secrets.package_read_token }}
-        run: npm ci
+          LEGACY_PEER_DEPENDENCIES: ${{ inputs.legacy_peer_dependencies }}
+        run: |
+          if [[ "$LEGACY_PEER_DEPENDENCIES" == "true" ]]; then
+            npm ci --legacy-peer-deps
+          else
+            npm ci
+          fi
 
       - name: Format
         run: npm run format:check

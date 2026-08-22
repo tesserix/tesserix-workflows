@@ -43,6 +43,13 @@ an immutable database image, a validated bootstrap path, and an image matrix.
 There are no arbitrary command inputs. Product-owned audit exceptions use the
 language tool's native configuration and stay beside their justification.
 
+The additive `v2.1.0` container contract supports monorepo image targets,
+source-root labels, product-owned Trivy ignore files, optional private registry
+and package credentials, one protected BuildKit application secret, and eight
+explicit public build values. Secret values stay on BuildKit secret mounts;
+only values already intended for the published client or image configuration
+may use the public build-argument interface.
+
 All external actions are pinned to full commit SHAs. Default permissions are
 read-only. Release alone requests package write and OIDC rights, publishes once,
 scans the resulting digest, attaches SBOM and provenance, and signs that digest.
