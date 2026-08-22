@@ -16,4 +16,4 @@ concurrency:
 
 jobs:
   images:
-    uses: tesserix/tesserix-workflows/.github/workflows/vehicle-rental-images.yml@v1.0.0
+    uses: tesserix/tesserix-workflows/.github/workflows/vehicle-rental-images.yml@v1.0.1
