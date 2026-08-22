@@ -55,6 +55,14 @@ on:
         description: Fail on high-severity dependency advisories
         type: boolean
         default: true
+      audit_ci_version:
+        description: Exact audit-ci version
+        type: string
+        default: 7.1.0
+      audit_config_path:
+        description: Optional repository-relative audit-ci JSON/JSONC config
+        type: string
+        default: ""
       doctor_enabled:
         description: Validate the Expo dependency and configuration contract
         type: boolean
@@ -84,12 +92,20 @@ jobs:
 
       - name: Validate workflow inputs
         env:
+          AUDIT_CI_VERSION: ${{ inputs.audit_ci_version }}
+          AUDIT_CONFIG_PATH: ${{ inputs.audit_config_path }}
           EXPO_DOCTOR_VERSION: ${{ inputs.expo_doctor_version }}
           PACKAGE_MANAGER: ${{ inputs.package_manager }}
           PNPM_VERSION: ${{ inputs.pnpm_version }}
         run: |
           [[ "$PACKAGE_MANAGER" == "npm" || "$PACKAGE_MANAGER" == "pnpm" ]]
+          [[ "$AUDIT_CI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$EXPO_DOCTOR_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ -n "$AUDIT_CONFIG_PATH" ]]; then
+            [[ "$AUDIT_CONFIG_PATH" != /* ]]
+            [[ "$AUDIT_CONFIG_PATH" != *..* ]]
+            [[ -f "$GITHUB_WORKSPACE/$AUDIT_CONFIG_PATH" ]]
+          fi
           if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
             [[ "$PNPM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           fi
@@ -175,13 +191,18 @@ jobs:
       - name: Audit dependencies
         if: ${{ inputs.audit_enabled }}
         env:
+          AUDIT_CI_VERSION: ${{ inputs.audit_ci_version }}
+          AUDIT_CONFIG_PATH: ${{ inputs.audit_config_path }}
           PACKAGE_MANAGER: ${{ inputs.package_manager }}
         run: |
-          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
-            npm audit --audit-level=high
-          else
-            pnpm audit --audit-level=high
+          config_args=()
+          if [[ -n "$AUDIT_CONFIG_PATH" ]]; then
+            config_args+=(--config "$GITHUB_WORKSPACE/$AUDIT_CONFIG_PATH")
           fi
+          npx --yes "audit-ci@${AUDIT_CI_VERSION}" \
+            --high \
+            --package-manager "$PACKAGE_MANAGER" \
+            "${config_args[@]}"
 
       - name: Expo doctor
         if: ${{ inputs.doctor_enabled }}

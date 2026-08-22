@@ -124,6 +124,13 @@ on:
       expo_audit_enabled:
         type: boolean
         default: true
+      expo_audit_ci_version:
+        type: string
+        default: 7.1.0
+      expo_audit_config_path:
+        description: Optional repository-relative audit-ci JSON/JSONC config
+        type: string
+        default: ""
       expo_doctor_enabled:
         type: boolean
         default: true
@@ -244,6 +251,8 @@ jobs:
       lint_enabled: ${{ inputs.expo_lint_enabled }}
       test_enabled: ${{ inputs.expo_test_enabled }}
       audit_enabled: ${{ inputs.expo_audit_enabled }}
+      audit_ci_version: ${{ inputs.expo_audit_ci_version }}
+      audit_config_path: ${{ inputs.expo_audit_config_path }}
       doctor_enabled: ${{ inputs.expo_doctor_enabled }}
       expo_doctor_version: ${{ inputs.expo_doctor_version }}
     secrets:

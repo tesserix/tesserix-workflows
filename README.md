@@ -38,7 +38,8 @@ definition once baked into an image. The protected values are mounted through
 BuildKit secrets and never accepted as build arguments. Callers map public
 values to the fixed `REUSABLE_PUBLIC_BUILD_ARG_*` interface in their Dockerfile.
 
-Repository-specific coverage baselines, advisory exceptions, schema bootstrap,
+Repository-specific coverage baselines, expiring `audit-ci` advisory exceptions,
+schema bootstrap,
 image names, EAS profiles, release triggers, and version-bump policy remain with
 the product. Standard package scripts are the language boundary; the shared
 workflow does not accept arbitrary commands.
