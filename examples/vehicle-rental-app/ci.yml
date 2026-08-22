@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: tesserix/tesserix-workflows/.github/workflows/vehicle-rental-ci.yml@v1.0.0
+    secrets:
+      package_read_token: ${{ secrets.PKG_READ_TOKEN }}

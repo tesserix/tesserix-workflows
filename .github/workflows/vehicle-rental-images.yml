@@ -1,0 +1,93 @@
+name: Vehicle Rental Images
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  release-guard:
+    name: Require main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse releases outside main
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: test "$RELEASE_REF" = refs/heads/main
+
+  build:
+    name: Build — ${{ matrix.image }}
+    needs: release-guard
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: vehicle-rental-api
+            dockerfile: docker/api.Dockerfile
+            app: ''
+          - image: vehicle-rental-storefront
+            dockerfile: docker/web.Dockerfile
+            app: storefront
+          - image: vehicle-rental-admin
+            dockerfile: docker/web.Dockerfile
+            app: admin
+          - image: vehicle-rental-onboarding
+            dockerfile: docker/web.Dockerfile
+            app: onboarding
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Short commit SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build, attest, and publish
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          build-args: |
+            APP=${{ matrix.app }}
+          tags: |
+            ghcr.io/tesserix/${{ matrix.image }}:main-${{ steps.sha.outputs.short }}
+            ghcr.io/tesserix/${{ matrix.image }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ matrix.image }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+          sbom: true
+          provenance: mode=max
+
+      - name: Scan the published digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/tesserix/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the published digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/tesserix/${{ matrix.image }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
