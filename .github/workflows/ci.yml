@@ -77,6 +77,10 @@ on:
         description: Use npm's legacy peer dependency resolution with the lockfile
         type: boolean
         default: false
+      nextjs_audit_workspaces:
+        description: Optional whitespace-separated npm workspaces included in the production audit
+        type: string
+        default: ""
       containers_enabled:
         description: Build, smoke-test, and scan the image matrix
         type: boolean
@@ -169,6 +173,7 @@ jobs:
       working_directory: ${{ inputs.nextjs_working_directory }}
       node_version: ${{ inputs.node_version }}
       legacy_peer_dependencies: ${{ inputs.nextjs_legacy_peer_dependencies }}
+      audit_workspaces: ${{ inputs.nextjs_audit_workspaces }}
     secrets:
       package_read_token: ${{ secrets.package_read_token }}
 

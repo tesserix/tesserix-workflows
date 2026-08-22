@@ -10,7 +10,7 @@ repeatable implementation of quality, security, and image-supply-chain gates.
 | `go-ci.yml` | Format, dependency verification, vet, build, race tests, coverage, and vulnerability audit |
 | `python-ci.yml` | Locked uv install, Ruff, strict mypy, pytest coverage, dependency audit, and package build |
 | `rust-ci.yml` | Format, Clippy, build, tests, audit, coverage, and optional Postgres integration coverage |
-| `nextjs-ci.yml` | Locked npm install, format, lint, tests, typecheck, audit, and production build |
+| `nextjs-ci.yml` | Locked npm install, format, lint, tests, typecheck, workspace-scoped audit, and production build |
 | `container-ci.yml` | Matrix build, optional HTTP smoke test, and blocking Trivy scan |
 | `container-release.yml` | GHCR publish with smoke test, SBOM, provenance, digest scan, and keyless signing |
 | `secret-scan.yml` | Full-history Gitleaks scan with a checksum-verified binary |

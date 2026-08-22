@@ -106,6 +106,9 @@ class ReusableWorkflowContract(unittest.TestCase):
             "npm run lint",
             "npm test",
             "npm run check-types",
+            "audit_workspaces:",
+            "NPM_AUDIT_WORKSPACES",
+            "--workspace=$workspace",
             "npm audit --audit-level=high --omit=dev",
             "npm run build",
         )
@@ -165,6 +168,7 @@ class ReusableWorkflowContract(unittest.TestCase):
             "name: CI gate",
             "needs.*.result",
             "nextjs_legacy_peer_dependencies:",
+            "nextjs_audit_workspaces:",
             "container_registry_token:",
             "container_application_build_secret:",
             "container_public_build_arg_8:",

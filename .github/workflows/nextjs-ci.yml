@@ -15,6 +15,10 @@ on:
         description: Install the locked dependency tree using legacy peer resolution
         type: boolean
         default: false
+      audit_workspaces:
+        description: Optional whitespace-separated npm workspaces included in the production audit
+        type: string
+        default: ""
     secrets:
       package_read_token:
         description: Optional read-only token for private npm packages
@@ -64,7 +68,16 @@ jobs:
         run: npm run check-types
 
       - name: Audit production dependencies
-        run: npm audit --audit-level=high --omit=dev
+        env:
+          NPM_AUDIT_WORKSPACES: ${{ inputs.audit_workspaces }}
+        run: |
+          read -r -a workspaces <<< "$NPM_AUDIT_WORKSPACES"
+          audit_args=()
+          for workspace in "${workspaces[@]}"; do
+            [[ "$workspace" =~ ^(@[a-z0-9._-]+/)?[a-z0-9._-]+$ ]]
+            audit_args+=("--workspace=$workspace")
+          done
+          npm audit --audit-level=high --omit=dev "${audit_args[@]}"
 
       - name: Build
         run: npm run build
