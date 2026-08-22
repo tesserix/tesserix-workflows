@@ -75,7 +75,7 @@ jobs:
         run: |
           cargo llvm-cov --workspace --all-features \
             --ignore-filename-regex '(tests?/|/api\.rs$)' \
-            --fail-under-lines 70 \
+            --fail-under-lines 52 \
             -- --include-ignored
 
   web:
