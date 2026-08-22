@@ -12,6 +12,9 @@ REUSABLE_WORKFLOWS = {
     "ci.yml",
     "container-ci.yml",
     "container-release.yml",
+    "expo-eas-build.yml",
+    "expo-ci.yml",
+    "expo-ios-release.yml",
     "go-ci.yml",
     "nextjs-ci.yml",
     "python-ci.yml",
@@ -38,6 +41,15 @@ class ReusableWorkflowContract(unittest.TestCase):
             if path.name != "validate.yml"
         }
         self.assertEqual(REUSABLE_WORKFLOWS, actual)
+
+    def test_reusable_workflows_do_not_embed_product_names(self) -> None:
+        forbidden = re.compile(
+            r"\b(?:fanzone|homechef|kora|mark8ly|vehicle[- ]rental)\b",
+            re.IGNORECASE,
+        )
+        for name in REUSABLE_WORKFLOWS:
+            with self.subTest(workflow=name):
+                self.assertNotRegex(read(WORKFLOWS / name), forbidden)
 
     def test_every_reusable_workflow_fails_closed(self) -> None:
         for name in REUSABLE_WORKFLOWS:
@@ -113,6 +125,64 @@ class ReusableWorkflowContract(unittest.TestCase):
             "npm run build",
         )
 
+    def test_expo_workflow_enforces_mobile_quality_without_arbitrary_commands(
+        self,
+    ) -> None:
+        self.assert_workflow_contains(
+            "expo-ci.yml",
+            "npx expo customize tsconfig.json",
+            "npx tsc --noEmit",
+            "expo-doctor@${EXPO_DOCTOR_VERSION}",
+            "npm run lint",
+            "npm test",
+            "pnpm run lint",
+            "pnpm test",
+            "npm audit --audit-level=high",
+            "pnpm audit --audit-level=high",
+            "package_manager:",
+            "workspace_filter:",
+        )
+
+    def test_eas_build_workflow_queues_a_pinned_noninteractive_cloud_build(
+        self,
+    ) -> None:
+        self.assert_workflow_contains(
+            "expo-eas-build.yml",
+            "expo/expo-github-action@",
+            "eas-version: ${{ inputs.eas_cli_version }}",
+            "eas build",
+            '--platform "$PLATFORM"',
+            '--profile "$PROFILE"',
+            "--non-interactive",
+            "--no-wait",
+            "--auto-submit",
+            "package_manager:",
+            "workspace_filter:",
+            "expo_token:",
+        )
+
+    def test_ios_release_builds_and_submits_the_exact_local_artifact(self) -> None:
+        workflow = read(WORKFLOWS / "expo-ios-release.yml")
+        self.assert_workflow_contains(
+            "expo-ios-release.yml",
+            "runs-on: macos-26",
+            "maxim-lobanov/setup-xcode@",
+            "xcode-version: ${{ inputs.xcode_version }}",
+            "Assert no .env leaked into the checkout",
+            "ASC_SECRET_COUNT",
+            "SENTRY_AUTH_TOKEN",
+            "eas build",
+            "--platform ios",
+            "--local",
+            '--output "$RUNNER_TEMP/app.ipa"',
+            'test -s "$RUNNER_TEMP/app.ipa"',
+            "eas submit",
+            '--path "$RUNNER_TEMP/app.ipa"',
+            "--non-interactive",
+        )
+        self.assertNotIn("--latest", workflow)
+        self.assertNotIn("actions/upload-artifact@", workflow)
+
     def test_container_workflows_build_smoke_scan_and_release_by_digest(self) -> None:
         self.assert_workflow_contains(
             "container-ci.yml",
@@ -171,12 +241,16 @@ class ReusableWorkflowContract(unittest.TestCase):
             "./.github/workflows/python-ci.yml",
             "./.github/workflows/rust-ci.yml",
             "./.github/workflows/nextjs-ci.yml",
+            "./.github/workflows/expo-ci.yml",
             "./.github/workflows/container-ci.yml",
             "./.github/workflows/secret-scan.yml",
             "name: CI gate",
             "needs.*.result",
             "nextjs_legacy_peer_dependencies:",
             "nextjs_audit_workspaces:",
+            "expo_enabled:",
+            "expo_package_manager:",
+            "expo_workspace_filter:",
             "container_registry_token:",
             "container_application_build_secret:",
             "container_public_build_arg_8:",
@@ -231,6 +305,8 @@ class ReusableWorkflowContract(unittest.TestCase):
             "Migration",
             "Rollback",
             "v2.0.0",
+            "Expo mobile quality",
+            "exact local IPA",
         ):
             with self.subTest(guarantee=guarantee):
                 self.assertIn(guarantee, decision)

@@ -1,0 +1,190 @@
+name: Expo CI
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing the Expo application
+        type: string
+        default: apps/mobile
+      install_directory:
+        description: Directory where locked dependencies are installed
+        type: string
+        default: .
+      lockfile_path:
+        description: Repository-relative npm or pnpm lockfile path
+        type: string
+        default: package-lock.json
+      node_version:
+        description: Node.js runtime version
+        type: string
+        default: "22"
+      package_manager:
+        description: Locked dependency manager (npm or pnpm)
+        type: string
+        default: npm
+      pnpm_version:
+        description: Exact pnpm version used when package_manager is pnpm
+        type: string
+        default: 10.17.1
+      workspace_filter:
+        description: Optional single npm workspace or pnpm filter to install
+        type: string
+        default: ""
+      legacy_peer_dependencies:
+        description: Use npm legacy peer resolution with the committed lockfile
+        type: boolean
+        default: false
+      typed_routes_enabled:
+        description: Generate Expo Router route types before typechecking
+        type: boolean
+        default: true
+      format_enabled:
+        description: Run the standard format:check package script
+        type: boolean
+        default: false
+      lint_enabled:
+        description: Run the standard lint package script
+        type: boolean
+        default: true
+      test_enabled:
+        description: Run the standard test package script
+        type: boolean
+        default: true
+      audit_enabled:
+        description: Fail on high-severity dependency advisories
+        type: boolean
+        default: true
+      doctor_enabled:
+        description: Validate the Expo dependency and configuration contract
+        type: boolean
+        default: true
+      expo_doctor_version:
+        description: Exact expo-doctor version
+        type: string
+        default: 1.20.2
+    secrets:
+      package_read_token:
+        description: Optional read-only token for private npm packages
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Expo quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Validate workflow inputs
+        env:
+          EXPO_DOCTOR_VERSION: ${{ inputs.expo_doctor_version }}
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+        run: |
+          [[ "$PACKAGE_MANAGER" == "npm" || "$PACKAGE_MANAGER" == "pnpm" ]]
+          [[ "$EXPO_DOCTOR_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            [[ "$PNPM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          fi
+
+      - name: Set up pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.lockfile_path }}
+          registry-url: https://npm.pkg.github.com
+
+      - name: Install locked dependencies
+        working-directory: ${{ inputs.install_directory }}
+        env:
+          LEGACY_PEER_DEPENDENCIES: ${{ inputs.legacy_peer_dependencies }}
+          NODE_AUTH_TOKEN: ${{ secrets.package_read_token }}
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+          WORKSPACE_FILTER: ${{ inputs.workspace_filter }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
+            install_args=(ci)
+            if [[ "$LEGACY_PEER_DEPENDENCIES" == "true" ]]; then
+              install_args+=(--legacy-peer-deps)
+            fi
+            if [[ -n "$WORKSPACE_FILTER" ]]; then
+              install_args+=("--workspace=$WORKSPACE_FILTER")
+            fi
+            npm "${install_args[@]}"
+          else
+            install_args=(install --frozen-lockfile)
+            if [[ -n "$WORKSPACE_FILTER" ]]; then
+              install_args+=(--filter "$WORKSPACE_FILTER")
+            fi
+            pnpm "${install_args[@]}"
+          fi
+
+      - name: Generate typed routes
+        if: ${{ inputs.typed_routes_enabled }}
+        run: npx expo customize tsconfig.json
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Format
+        if: ${{ inputs.format_enabled }}
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
+            npm run format:check
+          else
+            pnpm run format:check
+          fi
+
+      - name: Lint
+        if: ${{ inputs.lint_enabled }}
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
+            npm run lint
+          else
+            pnpm run lint
+          fi
+
+      - name: Test
+        if: ${{ inputs.test_enabled }}
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
+            npm test
+          else
+            pnpm test
+          fi
+
+      - name: Audit dependencies
+        if: ${{ inputs.audit_enabled }}
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
+            npm audit --audit-level=high
+          else
+            pnpm audit --audit-level=high
+          fi
+
+      - name: Expo doctor
+        if: ${{ inputs.doctor_enabled }}
+        env:
+          EXPO_DOCTOR_VERSION: ${{ inputs.expo_doctor_version }}
+        run: npx --yes "expo-doctor@${EXPO_DOCTOR_VERSION}"

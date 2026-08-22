@@ -1,0 +1,40 @@
+name: iOS Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      profile:
+        type: choice
+        options: [production, preview]
+        default: production
+      submit:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: tesserix/tesserix-workflows/.github/workflows/expo-ios-release.yml@v2.1.0
+    with:
+      working_directory: apps/mobile
+      install_directory: apps/mobile
+      lockfile_path: apps/mobile/package-lock.json
+      node_version: 22.19.0
+      xcode_version: "26.5"
+      profile: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'production' }}
+      submit: ${{ github.event_name != 'workflow_dispatch' || inputs.submit }}
+      require_sentry_for_production: true
+    secrets:
+      expo_token: ${{ secrets.EXPO_TOKEN }}
+      sentry_auth_token: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      asc_key_id: ${{ secrets.ASC_KEY_ID }}
+      asc_issuer_id: ${{ secrets.ASC_ISSUER_ID }}
+      asc_api_key_p8_base64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}

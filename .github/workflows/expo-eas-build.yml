@@ -1,0 +1,163 @@
+name: Expo EAS Build
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing the Expo application and eas.json
+        type: string
+        default: apps/mobile
+      install_directory:
+        description: Directory where locked dependencies are installed
+        type: string
+        default: .
+      lockfile_path:
+        description: Repository-relative npm or pnpm lockfile path
+        type: string
+        default: package-lock.json
+      node_version:
+        description: Node.js runtime version
+        type: string
+        default: "22"
+      package_manager:
+        description: Locked dependency manager (npm or pnpm)
+        type: string
+        default: npm
+      pnpm_version:
+        description: Exact pnpm version used when package_manager is pnpm
+        type: string
+        default: 10.17.1
+      workspace_filter:
+        description: Optional single npm workspace or pnpm filter to install
+        type: string
+        default: ""
+      legacy_peer_dependencies:
+        description: Use npm legacy peer resolution with the committed lockfile
+        type: boolean
+        default: false
+      eas_cli_version:
+        description: Exact EAS CLI version
+        type: string
+        default: 22.2.0
+      platform:
+        description: EAS build platform (ios, android, or all)
+        type: string
+        default: all
+      profile:
+        description: Product-owned EAS build profile
+        type: string
+        default: preview
+      no_wait:
+        description: Return after the build has been queued
+        type: boolean
+        default: true
+      auto_submit:
+        description: Submit the completed cloud build using eas.json
+        type: boolean
+        default: false
+    secrets:
+      expo_token:
+        description: Expo access token with access to the EAS project
+        required: true
+      package_read_token:
+        description: Optional read-only token for private npm packages
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: EAS cloud build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Validate workflow inputs
+        env:
+          EAS_CLI_VERSION: ${{ inputs.eas_cli_version }}
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+          PLATFORM: ${{ inputs.platform }}
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          [[ "$PACKAGE_MANAGER" == "npm" || "$PACKAGE_MANAGER" == "pnpm" ]]
+          [[ "$PLATFORM" == "ios" || "$PLATFORM" == "android" || "$PLATFORM" == "all" ]]
+          [[ "$PROFILE" =~ ^[a-zA-Z0-9._-]+$ ]]
+          [[ "$EAS_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            [[ "$PNPM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          fi
+
+      - name: Set up pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.lockfile_path }}
+          registry-url: https://npm.pkg.github.com
+
+      - name: Install locked dependencies
+        working-directory: ${{ inputs.install_directory }}
+        env:
+          LEGACY_PEER_DEPENDENCIES: ${{ inputs.legacy_peer_dependencies }}
+          NODE_AUTH_TOKEN: ${{ secrets.package_read_token }}
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+          WORKSPACE_FILTER: ${{ inputs.workspace_filter }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
+            install_args=(ci)
+            if [[ "$LEGACY_PEER_DEPENDENCIES" == "true" ]]; then
+              install_args+=(--legacy-peer-deps)
+            fi
+            if [[ -n "$WORKSPACE_FILTER" ]]; then
+              install_args+=("--workspace=$WORKSPACE_FILTER")
+            fi
+            npm "${install_args[@]}"
+          else
+            install_args=(install --frozen-lockfile)
+            if [[ -n "$WORKSPACE_FILTER" ]]; then
+              install_args+=(--filter "$WORKSPACE_FILTER")
+            fi
+            pnpm "${install_args[@]}"
+          fi
+
+      - name: Set up EAS CLI
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
+        with:
+          eas-version: ${{ inputs.eas_cli_version }}
+          packager: ${{ inputs.package_manager }}
+          token: ${{ secrets.expo_token }}
+
+      - name: Queue EAS build
+        env:
+          AUTO_SUBMIT: ${{ inputs.auto_submit }}
+          EXPO_TOKEN: ${{ secrets.expo_token }}
+          NO_WAIT: ${{ inputs.no_wait }}
+          PLATFORM: ${{ inputs.platform }}
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          test -n "$EXPO_TOKEN"
+          wait_args=()
+          submit_args=()
+          if [[ "$NO_WAIT" == "true" ]]; then
+            wait_args+=(--no-wait)
+          fi
+          if [[ "$AUTO_SUBMIT" == "true" ]]; then
+            submit_args+=(--auto-submit)
+          fi
+          eas build \
+            --platform "$PLATFORM" \
+            --profile "$PROFILE" \
+            --non-interactive \
+            "${wait_args[@]}" \
+            "${submit_args[@]}"

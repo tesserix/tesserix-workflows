@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: tesserix/tesserix-workflows/.github/workflows/ci.yml@v2.1.0
+    with:
+      expo_enabled: true
+      expo_working_directory: apps/mobile
+      expo_install_directory: apps/mobile
+      expo_lockfile_path: apps/mobile/package-lock.json
+      expo_node_version: 22.19.0
+      expo_package_manager: npm
+    secrets:
+      package_read_token: ${{ secrets.PACKAGE_READ_TOKEN }}
