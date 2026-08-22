@@ -159,6 +159,8 @@ class ReusableWorkflowContract(unittest.TestCase):
             "secret-scan.yml",
             "fetch-depth: 0",
             "sha256sum -c -",
+            ".gitleaks-baseline.json",
+            "--baseline-path",
             "gitleaks dir . --no-banner --redact",
         )
 

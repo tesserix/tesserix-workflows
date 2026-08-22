@@ -13,7 +13,7 @@ repeatable implementation of quality, security, and image-supply-chain gates.
 | `nextjs-ci.yml` | Locked npm install, format, lint, tests, typecheck, workspace-scoped audit, and production build |
 | `container-ci.yml` | Matrix build, optional HTTP smoke test, and blocking Trivy scan |
 | `container-release.yml` | GHCR publish with smoke test, SBOM, provenance, digest scan, and keyless signing |
-| `secret-scan.yml` | Full-history Gitleaks scan with a checksum-verified binary |
+| `secret-scan.yml` | Full-history Gitleaks scan with a verified binary and optional redacted baseline |
 
 ## Caller contract
 
