@@ -155,6 +155,9 @@ class ReusableWorkflowContract(unittest.TestCase):
             "audit_config_path:",
             "package_manager:",
             "workspace_filter:",
+            "workspace_dependencies_build_enabled:",
+            "Build workspace dependencies",
+            'pnpm --filter "${WORKSPACE_FILTER}^..." --if-present build',
         )
 
     def test_eas_build_workflow_queues_a_pinned_noninteractive_cloud_build(
@@ -266,6 +269,7 @@ class ReusableWorkflowContract(unittest.TestCase):
             "expo_enabled:",
             "expo_package_manager:",
             "expo_workspace_filter:",
+            "expo_workspace_dependencies_build_enabled:",
             "expo_audit_config_path:",
             "expo_lint_suppressions_path:",
             "container_registry_token:",

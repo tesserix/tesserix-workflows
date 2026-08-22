@@ -52,8 +52,9 @@ only values already intended for the published client or image configuration
 may use the public build-argument interface.
 
 Expo mobile quality is a fixed capability: locked npm or pnpm installation,
-typed-route generation, typecheck, standard package scripts, dependency audit,
-and a pinned Expo Doctor. Cloud EAS builds and local iOS releases are separate
+optional pnpm dependency-workspace build, typed-route generation, typecheck,
+standard package scripts, dependency audit, and a pinned Expo Doctor. Cloud
+EAS builds and local iOS releases are separate
 contracts because they have different cost, runner, artifact, and failure
 domains. The cloud contract can queue and optionally link submission on EAS.
 The local iOS contract pins macOS, Xcode, Node, EAS CLI, and actions; accepts the

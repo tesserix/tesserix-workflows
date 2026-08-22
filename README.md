@@ -24,8 +24,8 @@ Callers pin an immutable semantic release such as `v2.1.0`; they never use
 `main`. Inputs describe intent and repository layout, not shell commands:
 
 - enabled language capabilities and their working directories;
-- Expo application/install directories, locked package manager, and optional
-  monorepo workspace filter;
+- Expo application/install directories, locked package manager, optional
+  monorepo workspace filter, and dependency-workspace build;
 - toolchain versions and coverage floors;
 - an immutable database image and validated bootstrap-script path when needed;
 - a JSON image matrix containing Dockerfiles, optional targets, source roots,

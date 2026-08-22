@@ -106,6 +106,9 @@ on:
       expo_workspace_filter:
         type: string
         default: ""
+      expo_workspace_dependencies_build_enabled:
+        type: boolean
+        default: false
       expo_legacy_peer_dependencies:
         type: boolean
         default: false
@@ -251,6 +254,7 @@ jobs:
       package_manager: ${{ inputs.expo_package_manager }}
       pnpm_version: ${{ inputs.expo_pnpm_version }}
       workspace_filter: ${{ inputs.expo_workspace_filter }}
+      workspace_dependencies_build_enabled: ${{ inputs.expo_workspace_dependencies_build_enabled }}
       legacy_peer_dependencies: ${{ inputs.expo_legacy_peer_dependencies }}
       typed_routes_enabled: ${{ inputs.expo_typed_routes_enabled }}
       format_enabled: ${{ inputs.expo_format_enabled }}

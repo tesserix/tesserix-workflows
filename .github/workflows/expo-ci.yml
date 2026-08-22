@@ -31,6 +31,10 @@ on:
         description: Optional single npm workspace or pnpm filter to install
         type: string
         default: ""
+      workspace_dependencies_build_enabled:
+        description: Build pnpm dependency workspaces before typechecking
+        type: boolean
+        default: false
       legacy_peer_dependencies:
         description: Use npm legacy peer resolution with the committed lockfile
         type: boolean
@@ -102,6 +106,8 @@ jobs:
           LINT_SUPPRESSIONS_PATH: ${{ inputs.lint_suppressions_path }}
           PACKAGE_MANAGER: ${{ inputs.package_manager }}
           PNPM_VERSION: ${{ inputs.pnpm_version }}
+          WORKSPACE_DEPENDENCIES_BUILD_ENABLED: ${{ inputs.workspace_dependencies_build_enabled }}
+          WORKSPACE_FILTER: ${{ inputs.workspace_filter }}
         run: |
           [[ "$PACKAGE_MANAGER" == "npm" || "$PACKAGE_MANAGER" == "pnpm" ]]
           [[ "$AUDIT_CI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
@@ -118,6 +124,10 @@ jobs:
           fi
           if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
             [[ "$PNPM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          fi
+          if [[ "$WORKSPACE_DEPENDENCIES_BUILD_ENABLED" == "true" ]]; then
+            [[ "$PACKAGE_MANAGER" == "pnpm" ]]
+            [[ "$WORKSPACE_FILTER" =~ ^(@[a-z0-9._-]+/)?[a-z0-9._-]+$ ]]
           fi
 
       - name: Set up pnpm
@@ -157,6 +167,13 @@ jobs:
             fi
             pnpm "${install_args[@]}"
           fi
+
+      - name: Build workspace dependencies
+        if: ${{ inputs.workspace_dependencies_build_enabled }}
+        working-directory: ${{ inputs.install_directory }}
+        env:
+          WORKSPACE_FILTER: ${{ inputs.workspace_filter }}
+        run: pnpm --filter "${WORKSPACE_FILTER}^..." --if-present build
 
       - name: Generate typed routes
         if: ${{ inputs.typed_routes_enabled }}
