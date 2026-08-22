@@ -4,9 +4,43 @@ on:
   workflow_call:
     inputs:
       images:
-        description: JSON matrix with name, context, dockerfile, build_args, smoke_port, and smoke_path
+        description: JSON matrix describing product-owned image contracts
         type: string
         required: true
+    secrets:
+      registry_token:
+        description: Optional token for private registry dependencies
+        required: false
+      package_read_token:
+        description: Optional package token exposed as BuildKit secret PACKAGE_READ_TOKEN
+        required: false
+      application_build_secret:
+        description: Optional application secret exposed as BuildKit secret APPLICATION_BUILD_SECRET
+        required: false
+      public_build_arg_1:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_1
+        required: false
+      public_build_arg_2:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_2
+        required: false
+      public_build_arg_3:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_3
+        required: false
+      public_build_arg_4:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_4
+        required: false
+      public_build_arg_5:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_5
+        required: false
+      public_build_arg_6:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_6
+        required: false
+      public_build_arg_7:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_7
+        required: false
+      public_build_arg_8:
+        description: Optional public value exposed as REUSABLE_PUBLIC_BUILD_ARG_8
+        required: false
 
 permissions:
   contents: read
@@ -26,21 +60,78 @@ jobs:
       - name: Validate image contract
         env:
           IMAGE_NAME: ${{ matrix.name }}
+          IMAGE_TARGET: ${{ matrix.target }}
+          SOURCE_ROOT: ${{ matrix.source_root }}
           SMOKE_PATH: ${{ matrix.smoke_path }}
           SMOKE_PORT: ${{ matrix.smoke_port }}
+          TRIVY_IGNORE_FILE: ${{ matrix.trivy_ignore_file }}
         run: |
           [[ "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]*$ ]]
+          [[ -z "$IMAGE_TARGET" || "$IMAGE_TARGET" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]
+          [[ -z "$SOURCE_ROOT" || "$SOURCE_ROOT" != *[[:space:]]* ]]
           [[ "$SMOKE_PORT" =~ ^[0-9]+$ ]]
           [[ "$SMOKE_PATH" == /* && "$SMOKE_PATH" != *[[:space:]]* ]]
+          [[ -z "$TRIVY_IGNORE_FILE" || -f "$TRIVY_IGNORE_FILE" ]]
+
+      - name: Prepare protected build inputs
+        id: build-inputs
+        env:
+          APPLICATION_BUILD_SECRET: ${{ secrets.application_build_secret }}
+          REGISTRY_TOKEN: ${{ secrets.registry_token }}
+          REQUIRES_APPLICATION_BUILD_SECRET: ${{ matrix.requires_application_build_secret == true }}
+        run: |
+          if [[ "$REQUIRES_APPLICATION_BUILD_SECRET" == "true" && -z "$APPLICATION_BUILD_SECRET" ]]; then
+            echo "::error::Required application build secret is not configured"
+            exit 1
+          fi
+          if [[ -n "$APPLICATION_BUILD_SECRET" ]]; then
+            fingerprint=$(printf '%s' "$APPLICATION_BUILD_SECRET" | sha256sum | cut -c1-16)
+          else
+            fingerprint=none
+          fi
+          if [[ -n "$REGISTRY_TOKEN" ]]; then
+            registry_token_configured=true
+          else
+            registry_token_configured=false
+          fi
+          echo "secret_fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "registry_token_configured=$registry_token_configured" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to registry
+        if: ${{ steps.build-inputs.outputs.registry_token_configured == 'true' }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.registry_token }}
 
       - name: Build image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
           load: true
           push: false
-          build-args: ${{ matrix.build_args }}
+          build-args: |
+            ${{ matrix.build_args }}
+            REUSABLE_BUILD_CACHE_FP=${{ steps.build-inputs.outputs.secret_fingerprint }}
+            REUSABLE_PUBLIC_BUILD_ARG_1=${{ secrets.public_build_arg_1 }}
+            REUSABLE_PUBLIC_BUILD_ARG_2=${{ secrets.public_build_arg_2 }}
+            REUSABLE_PUBLIC_BUILD_ARG_3=${{ secrets.public_build_arg_3 }}
+            REUSABLE_PUBLIC_BUILD_ARG_4=${{ secrets.public_build_arg_4 }}
+            REUSABLE_PUBLIC_BUILD_ARG_5=${{ secrets.public_build_arg_5 }}
+            REUSABLE_PUBLIC_BUILD_ARG_6=${{ secrets.public_build_arg_6 }}
+            REUSABLE_PUBLIC_BUILD_ARG_7=${{ secrets.public_build_arg_7 }}
+            REUSABLE_PUBLIC_BUILD_ARG_8=${{ secrets.public_build_arg_8 }}
+          secrets: |
+            PACKAGE_READ_TOKEN=${{ secrets.package_read_token }}
+            APPLICATION_BUILD_SECRET=${{ secrets.application_build_secret }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ matrix.name }}
+            dev.tesserix.source.root=${{ matrix.source_root }}
           tags: local/ci-${{ matrix.name }}:${{ github.sha }}
           cache-from: type=gha,scope=pr-${{ matrix.name }}
           cache-to: type=gha,scope=pr-${{ matrix.name }},mode=max
@@ -67,3 +158,4 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
+          trivyignores: ${{ matrix.trivy_ignore_file }}

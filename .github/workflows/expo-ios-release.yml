@@ -1,0 +1,234 @@
+name: Expo iOS Release
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing the Expo application and eas.json
+        type: string
+        default: apps/mobile
+      install_directory:
+        description: Directory where locked dependencies are installed
+        type: string
+        default: apps/mobile
+      lockfile_path:
+        description: Repository-relative npm or pnpm lockfile path
+        type: string
+        default: apps/mobile/package-lock.json
+      node_version:
+        description: Node.js runtime version used by the local build
+        type: string
+        default: 22.19.0
+      xcode_version:
+        description: Xcode toolchain version used by the local build
+        type: string
+        default: "26.5"
+      package_manager:
+        description: Locked dependency manager (npm or pnpm)
+        type: string
+        default: npm
+      pnpm_version:
+        description: Exact pnpm version used when package_manager is pnpm
+        type: string
+        default: 10.17.1
+      workspace_filter:
+        description: Optional single npm workspace or pnpm filter to install
+        type: string
+        default: ""
+      legacy_peer_dependencies:
+        description: Use npm legacy peer resolution with the committed lockfile
+        type: boolean
+        default: false
+      eas_cli_version:
+        description: Exact EAS CLI version
+        type: string
+        default: 22.2.0
+      profile:
+        description: Product-owned EAS build and submit profile
+        type: string
+        default: production
+      production_profile:
+        description: Profile allowed to submit and subject to production guards
+        type: string
+        default: production
+      submit:
+        description: Submit the exact local IPA when using the production profile
+        type: boolean
+        default: true
+      require_sentry_for_production:
+        description: Fail a production build when the Sentry token is absent
+        type: boolean
+        default: false
+    secrets:
+      expo_token:
+        description: Expo access token with project and signing access
+        required: true
+      package_read_token:
+        description: Optional read-only token for private npm packages
+        required: false
+      sentry_auth_token:
+        description: Optional Sentry token for source-map upload
+        required: false
+      asc_key_id:
+        description: Optional App Store Connect API key identifier
+        required: false
+      asc_issuer_id:
+        description: Optional App Store Connect API key issuer identifier
+        required: false
+      asc_api_key_p8_base64:
+        description: Optional base64-encoded App Store Connect private key
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Local iOS release
+    runs-on: macos-26
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Validate workflow inputs and optional Apple credentials
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.asc_api_key_p8_base64 }}
+          ASC_ISSUER_ID: ${{ secrets.asc_issuer_id }}
+          ASC_KEY_ID: ${{ secrets.asc_key_id }}
+          EAS_CLI_VERSION: ${{ inputs.eas_cli_version }}
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+          PRODUCTION_PROFILE: ${{ inputs.production_profile }}
+          PROFILE: ${{ inputs.profile }}
+          XCODE_VERSION: ${{ inputs.xcode_version }}
+        run: |
+          [[ "$PACKAGE_MANAGER" == "npm" || "$PACKAGE_MANAGER" == "pnpm" ]]
+          [[ "$PROFILE" =~ ^[a-zA-Z0-9._-]+$ ]]
+          [[ "$PRODUCTION_PROFILE" =~ ^[a-zA-Z0-9._-]+$ ]]
+          [[ "$EAS_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$XCODE_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            [[ "$PNPM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          fi
+
+          ASC_SECRET_COUNT=0
+          for value in "$ASC_KEY_ID" "$ASC_ISSUER_ID" "$ASC_API_KEY_P8_BASE64"; do
+            if [[ -n "$value" ]]; then
+              ASC_SECRET_COUNT=$((ASC_SECRET_COUNT + 1))
+            fi
+          done
+          if [[ "$ASC_SECRET_COUNT" != 0 && "$ASC_SECRET_COUNT" != 3 ]]; then
+            echo "::error::App Store Connect credentials require all three values or none"
+            exit 1
+          fi
+          echo "ASC_SECRET_COUNT=$ASC_SECRET_COUNT" >> "$GITHUB_ENV"
+
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: ${{ inputs.xcode_version }}
+
+      - name: Set up pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.lockfile_path }}
+          registry-url: https://npm.pkg.github.com
+
+      - name: Assert no .env leaked into the checkout
+        run: test ! -f .env || { echo "::error::.env is present in the release checkout"; exit 1; }
+
+      - name: Install locked dependencies
+        working-directory: ${{ inputs.install_directory }}
+        env:
+          LEGACY_PEER_DEPENDENCIES: ${{ inputs.legacy_peer_dependencies }}
+          NODE_AUTH_TOKEN: ${{ secrets.package_read_token }}
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+          WORKSPACE_FILTER: ${{ inputs.workspace_filter }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
+            install_args=(ci)
+            if [[ "$LEGACY_PEER_DEPENDENCIES" == "true" ]]; then
+              install_args+=(--legacy-peer-deps)
+            fi
+            if [[ -n "$WORKSPACE_FILTER" ]]; then
+              install_args+=("--workspace=$WORKSPACE_FILTER")
+            fi
+            npm "${install_args[@]}"
+          else
+            install_args=(install --frozen-lockfile)
+            if [[ -n "$WORKSPACE_FILTER" ]]; then
+              install_args+=(--filter "$WORKSPACE_FILTER")
+            fi
+            pnpm "${install_args[@]}"
+          fi
+
+      - name: Set up EAS CLI
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
+        with:
+          eas-version: ${{ inputs.eas_cli_version }}
+          packager: ${{ inputs.package_manager }}
+          token: ${{ secrets.expo_token }}
+
+      - name: Configure App Store Connect API key
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.asc_api_key_p8_base64 }}
+          ASC_ISSUER_ID: ${{ secrets.asc_issuer_id }}
+          ASC_KEY_ID: ${{ secrets.asc_key_id }}
+        run: |
+          if [[ "$ASC_SECRET_COUNT" == 3 ]]; then
+            key_path="$RUNNER_TEMP/asc-api-key.p8"
+            printf '%s' "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$key_path"
+            chmod 600 "$key_path"
+            {
+              echo "EXPO_ASC_API_KEY_PATH=$key_path"
+              echo "EXPO_ASC_KEY_ID=$ASC_KEY_ID"
+              echo "EXPO_ASC_ISSUER_ID=$ASC_ISSUER_ID"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Build exact local IPA
+        env:
+          EXPO_TOKEN: ${{ secrets.expo_token }}
+          PRODUCTION_PROFILE: ${{ inputs.production_profile }}
+          PROFILE: ${{ inputs.profile }}
+          REQUIRE_SENTRY: ${{ inputs.require_sentry_for_production }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.sentry_auth_token }}
+        run: |
+          test -n "$EXPO_TOKEN"
+          if [[ "$PROFILE" == "$PRODUCTION_PROFILE" && "$REQUIRE_SENTRY" == "true" && -z "$SENTRY_AUTH_TOKEN" ]]; then
+            echo "::error::SENTRY_AUTH_TOKEN is required for this production build"
+            exit 1
+          fi
+          eas build \
+            --platform ios \
+            --profile "$PROFILE" \
+            --local \
+            --non-interactive \
+            --output "$RUNNER_TEMP/app.ipa"
+          test -s "$RUNNER_TEMP/app.ipa"
+
+      - name: Submit exact IPA to TestFlight
+        if: ${{ inputs.submit && inputs.profile == inputs.production_profile }}
+        env:
+          EXPO_TOKEN: ${{ secrets.expo_token }}
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          eas submit \
+            --platform ios \
+            --profile "$PROFILE" \
+            --path "$RUNNER_TEMP/app.ipa" \
+            --non-interactive
+
+      - name: Remove temporary Apple credential
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/asc-api-key.p8"

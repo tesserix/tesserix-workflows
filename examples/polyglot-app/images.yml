@@ -16,8 +16,8 @@ concurrency:
 
 jobs:
   images:
-    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@v2.0.0
+    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@v2.1.0
     with:
       namespace: tesserix
       images: >-
-        {"include":[{"name":"api","context":".","dockerfile":"docker/api.Dockerfile","build_args":"","smoke_port":0,"smoke_path":"/healthz"},{"name":"web","context":".","dockerfile":"docker/web.Dockerfile","build_args":"","smoke_port":3000,"smoke_path":"/healthz"}]}
+        {"include":[{"name":"api","context":".","dockerfile":"docker/api.Dockerfile","target":"","source_root":".","build_args":"","requires_application_build_secret":false,"trivy_ignore_file":"","smoke_port":0,"smoke_path":"/healthz"},{"name":"web","context":".","dockerfile":"docker/web.Dockerfile","target":"runtime","source_root":".","build_args":"","requires_application_build_secret":false,"trivy_ignore_file":"","smoke_port":3000,"smoke_path":"/healthz"}]}

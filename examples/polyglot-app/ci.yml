@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   ci:
-    uses: tesserix/tesserix-workflows/.github/workflows/ci.yml@v2.0.0
+    uses: tesserix/tesserix-workflows/.github/workflows/ci.yml@v2.1.0
     with:
       rust_enabled: true
       rust_toolchain: "1.97"
@@ -24,6 +24,6 @@ jobs:
       node_version: "22"
       containers_enabled: true
       container_images: >-
-        {"include":[{"name":"api","context":".","dockerfile":"docker/api.Dockerfile","build_args":"","smoke_port":0,"smoke_path":"/healthz"},{"name":"web","context":".","dockerfile":"docker/web.Dockerfile","build_args":"","smoke_port":3000,"smoke_path":"/healthz"}]}
+        {"include":[{"name":"api","context":".","dockerfile":"docker/api.Dockerfile","target":"","source_root":".","build_args":"","requires_application_build_secret":false,"trivy_ignore_file":"","smoke_port":0,"smoke_path":"/healthz"},{"name":"web","context":".","dockerfile":"docker/web.Dockerfile","target":"runtime","source_root":".","build_args":"","requires_application_build_secret":false,"trivy_ignore_file":"","smoke_port":3000,"smoke_path":"/healthz"}]}
     secrets:
       package_read_token: ${{ secrets.PACKAGE_READ_TOKEN }}

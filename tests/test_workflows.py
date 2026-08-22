@@ -12,6 +12,9 @@ REUSABLE_WORKFLOWS = {
     "ci.yml",
     "container-ci.yml",
     "container-release.yml",
+    "expo-eas-build.yml",
+    "expo-ci.yml",
+    "expo-ios-release.yml",
     "go-ci.yml",
     "nextjs-ci.yml",
     "python-ci.yml",
@@ -38,6 +41,15 @@ class ReusableWorkflowContract(unittest.TestCase):
             if path.name != "validate.yml"
         }
         self.assertEqual(REUSABLE_WORKFLOWS, actual)
+
+    def test_reusable_workflows_do_not_embed_product_names(self) -> None:
+        forbidden = re.compile(
+            r"\b(?:fanzone|homechef|kora|mark8ly|vehicle[- ]rental)\b",
+            re.IGNORECASE,
+        )
+        for name in REUSABLE_WORKFLOWS:
+            with self.subTest(workflow=name):
+                self.assertNotRegex(read(WORKFLOWS / name), forbidden)
 
     def test_every_reusable_workflow_fails_closed(self) -> None:
         for name in REUSABLE_WORKFLOWS:
@@ -66,6 +78,9 @@ class ReusableWorkflowContract(unittest.TestCase):
             "python-ci.yml",
             "actions/setup-python@",
             "astral-sh/setup-uv@",
+            "package_read_token:",
+            "GIT_CONFIG_KEY_0:",
+            "secrets.package_read_token",
             "uv sync --locked --all-extras --dev",
             "ruff format --check",
             "ruff check",
@@ -74,6 +89,11 @@ class ReusableWorkflowContract(unittest.TestCase):
             "--cov-fail-under",
             "pip-audit",
             "uv build",
+        )
+        self.assertRegex(
+            read(WORKFLOWS / "ci.yml"),
+            r"(?s)  python:.*?secrets:\s+package_read_token: "
+            r"\$\{\{ secrets\.package_read_token \}\}.*?\n\n  rust:",
         )
 
     def test_rust_workflow_enforces_quality_and_optional_database_coverage(
@@ -100,13 +120,85 @@ class ReusableWorkflowContract(unittest.TestCase):
             "nextjs-ci.yml",
             "actions/setup-node@",
             "npm ci",
+            "legacy_peer_dependencies:",
+            "npm ci --legacy-peer-deps",
             "npm run format:check",
             "npm run lint",
             "npm test",
             "npm run check-types",
+            "audit_workspaces:",
+            "NPM_AUDIT_WORKSPACES",
+            "--workspace=$workspace",
             "npm audit --audit-level=high --omit=dev",
             "npm run build",
         )
+
+    def test_expo_workflow_enforces_mobile_quality_without_arbitrary_commands(
+        self,
+    ) -> None:
+        self.assert_workflow_contains(
+            "expo-ci.yml",
+            "npx expo customize tsconfig.json",
+            "npx tsc --noEmit",
+            "expo-doctor@${EXPO_DOCTOR_VERSION}",
+            "npm run lint",
+            "npm test",
+            "pnpm run lint",
+            "LINT_SUPPRESSIONS_PATH",
+            "--prune-suppressions",
+            "lint_suppressions_path:",
+            "pnpm test",
+            'npx --yes "audit-ci@${AUDIT_CI_VERSION}"',
+            '--package-manager "$PACKAGE_MANAGER"',
+            "AUDIT_CONFIG_PATH",
+            "audit_ci_version:",
+            "audit_config_path:",
+            "package_manager:",
+            "workspace_filter:",
+            "workspace_dependencies_build_enabled:",
+            "Build workspace dependencies",
+            'pnpm --filter "${WORKSPACE_FILTER}^..." --if-present build',
+        )
+
+    def test_eas_build_workflow_queues_a_pinned_noninteractive_cloud_build(
+        self,
+    ) -> None:
+        self.assert_workflow_contains(
+            "expo-eas-build.yml",
+            "expo/expo-github-action@",
+            "eas-version: ${{ inputs.eas_cli_version }}",
+            "eas build",
+            '--platform "$PLATFORM"',
+            '--profile "$PROFILE"',
+            "--non-interactive",
+            "--no-wait",
+            "--auto-submit",
+            "package_manager:",
+            "workspace_filter:",
+            "expo_token:",
+        )
+
+    def test_ios_release_builds_and_submits_the_exact_local_artifact(self) -> None:
+        workflow = read(WORKFLOWS / "expo-ios-release.yml")
+        self.assert_workflow_contains(
+            "expo-ios-release.yml",
+            "runs-on: macos-26",
+            "maxim-lobanov/setup-xcode@",
+            "xcode-version: ${{ inputs.xcode_version }}",
+            "Assert no .env leaked into the checkout",
+            "ASC_SECRET_COUNT",
+            "SENTRY_AUTH_TOKEN",
+            "eas build",
+            "--platform ios",
+            "--local",
+            '--output "$RUNNER_TEMP/app.ipa"',
+            'test -s "$RUNNER_TEMP/app.ipa"',
+            "eas submit",
+            '--path "$RUNNER_TEMP/app.ipa"',
+            "--non-interactive",
+        )
+        self.assertNotIn("--latest", workflow)
+        self.assertNotIn("actions/upload-artifact@", workflow)
 
     def test_container_workflows_build_smoke_scan_and_release_by_digest(self) -> None:
         self.assert_workflow_contains(
@@ -117,6 +209,13 @@ class ReusableWorkflowContract(unittest.TestCase):
             "aquasecurity/trivy-action@",
             "severity: CRITICAL,HIGH",
             "exit-code: 1",
+            "target: ${{ matrix.target }}",
+            "dev.tesserix.source.root=${{ matrix.source_root }}",
+            "trivyignores: ${{ matrix.trivy_ignore_file }}",
+            "PACKAGE_READ_TOKEN=${{ secrets.package_read_token }}",
+            "APPLICATION_BUILD_SECRET=${{ secrets.application_build_secret }}",
+            "REUSABLE_BUILD_CACHE_FP",
+            "REUSABLE_PUBLIC_BUILD_ARG_8=${{ secrets.public_build_arg_8 }}",
         )
         self.assert_workflow_contains(
             "container-release.yml",
@@ -127,6 +226,19 @@ class ReusableWorkflowContract(unittest.TestCase):
             "Smoke test published image",
             "steps.build.outputs.digest",
             "cosign sign --yes",
+            "target: ${{ matrix.target }}",
+            "dev.tesserix.source.root=${{ matrix.source_root }}",
+            "trivyignores: ${{ matrix.trivy_ignore_file }}",
+            "PACKAGE_READ_TOKEN=${{ secrets.package_read_token }}",
+            "APPLICATION_BUILD_SECRET=${{ secrets.application_build_secret }}",
+            "REUSABLE_BUILD_CACHE_FP",
+            "REUSABLE_PUBLIC_BUILD_ARG_8=${{ secrets.public_build_arg_8 }}",
+        )
+        self.assertNotIn(
+            "REUSABLE_BUILD_SECRET_FP", read(WORKFLOWS / "container-ci.yml")
+        )
+        self.assertNotIn(
+            "REUSABLE_BUILD_SECRET_FP", read(WORKFLOWS / "container-release.yml")
         )
 
     def test_secret_scan_is_a_single_reusable_gate(self) -> None:
@@ -134,8 +246,11 @@ class ReusableWorkflowContract(unittest.TestCase):
             "secret-scan.yml",
             "fetch-depth: 0",
             "sha256sum -c -",
-            "gitleaks dir . --no-banner --redact",
+            ".gitleaks-baseline.json",
+            "--baseline-path",
+            "gitleaks git . --no-banner --redact",
         )
+        self.assertNotIn("gitleaks dir", read(WORKFLOWS / "secret-scan.yml"))
 
     def test_orchestrator_composes_capabilities_and_has_one_stable_gate(self) -> None:
         self.assert_workflow_contains(
@@ -144,10 +259,23 @@ class ReusableWorkflowContract(unittest.TestCase):
             "./.github/workflows/python-ci.yml",
             "./.github/workflows/rust-ci.yml",
             "./.github/workflows/nextjs-ci.yml",
+            "./.github/workflows/expo-ci.yml",
             "./.github/workflows/container-ci.yml",
             "./.github/workflows/secret-scan.yml",
             "name: CI gate",
             "needs.*.result",
+            "nextjs_legacy_peer_dependencies:",
+            "nextjs_audit_workspaces:",
+            "expo_enabled:",
+            "expo_package_manager:",
+            "expo_workspace_filter:",
+            "expo_workspace_dependencies_build_enabled:",
+            "expo_audit_config_path:",
+            "expo_lint_suppressions_path:",
+            "container_registry_token:",
+            "package_read_token: ${{ secrets.package_read_token }}",
+            "container_application_build_secret:",
+            "container_public_build_arg_8:",
         )
 
     def test_external_actions_are_pinned_to_full_commit_shas(self) -> None:
@@ -165,9 +293,9 @@ class ReusableWorkflowContract(unittest.TestCase):
     def test_permissions_are_least_privilege(self) -> None:
         for name in REUSABLE_WORKFLOWS - {"container-release.yml"}:
             with self.subTest(workflow=name):
-                self.assertRegex(
-                    read(WORKFLOWS / name), r"permissions:\s+contents: read"
-                )
+                workflow = read(WORKFLOWS / name)
+                self.assertRegex(workflow, r"permissions:\s+contents: read")
+                self.assertNotIn("packages: read", workflow)
         self.assertRegex(
             read(WORKFLOWS / "container-release.yml"),
             r"permissions:\s+contents: read\s+packages: write\s+id-token: write",
@@ -186,7 +314,7 @@ class ReusableWorkflowContract(unittest.TestCase):
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertLessEqual(len(meaningful), 45)
                 self.assertIn("tesserix/tesserix-workflows/", workflow)
-                self.assertIn("@v2.0.0", workflow)
+                self.assertIn("@v2.1.0", workflow)
                 self.assertNotIn("@main", workflow)
 
     def test_architecture_decision_records_migration_and_rollback(self) -> None:
@@ -199,6 +327,8 @@ class ReusableWorkflowContract(unittest.TestCase):
             "Migration",
             "Rollback",
             "v2.0.0",
+            "Expo mobile quality",
+            "exact local IPA",
         ):
             with self.subTest(guarantee=guarantee):
                 self.assertIn(guarantee, decision)

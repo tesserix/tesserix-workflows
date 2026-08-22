@@ -73,6 +73,77 @@ on:
       node_version:
         type: string
         default: "22"
+      nextjs_legacy_peer_dependencies:
+        description: Use npm's legacy peer dependency resolution with the lockfile
+        type: boolean
+        default: false
+      nextjs_audit_workspaces:
+        description: Optional whitespace-separated npm workspaces included in the production audit
+        type: string
+        default: ""
+      expo_enabled:
+        description: Run the Expo mobile quality workflow
+        type: boolean
+        default: false
+      expo_working_directory:
+        type: string
+        default: apps/mobile
+      expo_install_directory:
+        type: string
+        default: .
+      expo_lockfile_path:
+        type: string
+        default: package-lock.json
+      expo_node_version:
+        type: string
+        default: "22"
+      expo_package_manager:
+        type: string
+        default: npm
+      expo_pnpm_version:
+        type: string
+        default: 10.17.1
+      expo_workspace_filter:
+        type: string
+        default: ""
+      expo_workspace_dependencies_build_enabled:
+        type: boolean
+        default: false
+      expo_legacy_peer_dependencies:
+        type: boolean
+        default: false
+      expo_typed_routes_enabled:
+        type: boolean
+        default: true
+      expo_format_enabled:
+        type: boolean
+        default: false
+      expo_lint_enabled:
+        type: boolean
+        default: true
+      expo_lint_suppressions_path:
+        description: Optional repository-relative ESLint 9 suppressions file
+        type: string
+        default: ""
+      expo_test_enabled:
+        type: boolean
+        default: true
+      expo_audit_enabled:
+        type: boolean
+        default: true
+      expo_audit_ci_version:
+        type: string
+        default: 7.1.0
+      expo_audit_config_path:
+        description: Optional repository-relative audit-ci JSON/JSONC config
+        type: string
+        default: ""
+      expo_doctor_enabled:
+        type: boolean
+        default: true
+      expo_doctor_version:
+        type: string
+        default: 1.20.2
       containers_enabled:
         description: Build, smoke-test, and scan the image matrix
         type: boolean
@@ -83,7 +154,40 @@ on:
         default: '{"include":[]}'
     secrets:
       package_read_token:
-        description: Optional read-only token for private npm packages
+        description: Optional read-only token for private package dependencies
+        required: false
+      container_registry_token:
+        description: Optional token for private registry dependencies
+        required: false
+      container_package_read_token:
+        description: Optional package token for container builds
+        required: false
+      container_application_build_secret:
+        description: Optional protected application build input
+        required: false
+      container_public_build_arg_1:
+        description: Optional public container build value 1
+        required: false
+      container_public_build_arg_2:
+        description: Optional public container build value 2
+        required: false
+      container_public_build_arg_3:
+        description: Optional public container build value 3
+        required: false
+      container_public_build_arg_4:
+        description: Optional public container build value 4
+        required: false
+      container_public_build_arg_5:
+        description: Optional public container build value 5
+        required: false
+      container_public_build_arg_6:
+        description: Optional public container build value 6
+        required: false
+      container_public_build_arg_7:
+        description: Optional public container build value 7
+        required: false
+      container_public_build_arg_8:
+        description: Optional public container build value 8
         required: false
 
 permissions:
@@ -109,6 +213,8 @@ jobs:
       uv_version: ${{ inputs.python_uv_version }}
       source_directory: ${{ inputs.python_source_directory }}
       coverage_min_lines: ${{ inputs.python_coverage_min_lines }}
+    secrets:
+      package_read_token: ${{ secrets.package_read_token }}
 
   rust:
     name: Rust
@@ -131,6 +237,35 @@ jobs:
     with:
       working_directory: ${{ inputs.nextjs_working_directory }}
       node_version: ${{ inputs.node_version }}
+      legacy_peer_dependencies: ${{ inputs.nextjs_legacy_peer_dependencies }}
+      audit_workspaces: ${{ inputs.nextjs_audit_workspaces }}
+    secrets:
+      package_read_token: ${{ secrets.package_read_token }}
+
+  expo:
+    name: Expo
+    if: ${{ inputs.expo_enabled }}
+    uses: ./.github/workflows/expo-ci.yml
+    with:
+      working_directory: ${{ inputs.expo_working_directory }}
+      install_directory: ${{ inputs.expo_install_directory }}
+      lockfile_path: ${{ inputs.expo_lockfile_path }}
+      node_version: ${{ inputs.expo_node_version }}
+      package_manager: ${{ inputs.expo_package_manager }}
+      pnpm_version: ${{ inputs.expo_pnpm_version }}
+      workspace_filter: ${{ inputs.expo_workspace_filter }}
+      workspace_dependencies_build_enabled: ${{ inputs.expo_workspace_dependencies_build_enabled }}
+      legacy_peer_dependencies: ${{ inputs.expo_legacy_peer_dependencies }}
+      typed_routes_enabled: ${{ inputs.expo_typed_routes_enabled }}
+      format_enabled: ${{ inputs.expo_format_enabled }}
+      lint_enabled: ${{ inputs.expo_lint_enabled }}
+      lint_suppressions_path: ${{ inputs.expo_lint_suppressions_path }}
+      test_enabled: ${{ inputs.expo_test_enabled }}
+      audit_enabled: ${{ inputs.expo_audit_enabled }}
+      audit_ci_version: ${{ inputs.expo_audit_ci_version }}
+      audit_config_path: ${{ inputs.expo_audit_config_path }}
+      doctor_enabled: ${{ inputs.expo_doctor_enabled }}
+      expo_doctor_version: ${{ inputs.expo_doctor_version }}
     secrets:
       package_read_token: ${{ secrets.package_read_token }}
 
@@ -140,6 +275,18 @@ jobs:
     uses: ./.github/workflows/container-ci.yml
     with:
       images: ${{ inputs.container_images }}
+    secrets:
+      registry_token: ${{ secrets.container_registry_token }}
+      package_read_token: ${{ secrets.container_package_read_token }}
+      application_build_secret: ${{ secrets.container_application_build_secret }}
+      public_build_arg_1: ${{ secrets.container_public_build_arg_1 }}
+      public_build_arg_2: ${{ secrets.container_public_build_arg_2 }}
+      public_build_arg_3: ${{ secrets.container_public_build_arg_3 }}
+      public_build_arg_4: ${{ secrets.container_public_build_arg_4 }}
+      public_build_arg_5: ${{ secrets.container_public_build_arg_5 }}
+      public_build_arg_6: ${{ secrets.container_public_build_arg_6 }}
+      public_build_arg_7: ${{ secrets.container_public_build_arg_7 }}
+      public_build_arg_8: ${{ secrets.container_public_build_arg_8 }}
 
   secrets:
     name: Secrets
@@ -148,7 +295,7 @@ jobs:
   gate:
     name: CI gate
     if: ${{ always() }}
-    needs: [go, python, rust, nextjs, containers, secrets]
+    needs: [go, python, rust, nextjs, expo, containers, secrets]
     runs-on: ubuntu-latest
     steps:
       - name: Refuse failed or cancelled capabilities
