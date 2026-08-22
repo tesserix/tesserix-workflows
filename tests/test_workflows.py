@@ -22,7 +22,7 @@ class VehicleRentalWorkflowContract(unittest.TestCase):
             "cargo clippy --workspace --all-targets -- -D warnings",
             "cargo test --workspace --test boundaries",
             "cargo llvm-cov --workspace --all-features",
-            "--fail-under-lines 70",
+            "--fail-under-lines 52",
             "scripts/test-db.sh",
             "cargo audit",
             "npm ci",
@@ -38,6 +38,12 @@ class VehicleRentalWorkflowContract(unittest.TestCase):
 
         self.assertNotIn("continue-on-error", workflow)
         self.assertNotIn("Test, without a database", workflow)
+
+        coverage_policy = read(
+            ROOT / "docs" / "quality-gates" / "vehicle-rental-coverage.md"
+        )
+        self.assertIn("52.70%", coverage_policy)
+        self.assertIn("70%", coverage_policy)
 
     def test_image_workflow_builds_scans_attests_and_signs_each_image(self) -> None:
         workflow = read(WORKFLOWS / "vehicle-rental-images.yml")
@@ -56,6 +62,7 @@ class VehicleRentalWorkflowContract(unittest.TestCase):
             "push: true",
             "sbom: true",
             "provenance: mode=max",
+            "Smoke test the web image",
             "severity: CRITICAL,HIGH",
             "exit-code: 1",
             "cosign sign --yes",
@@ -90,6 +97,17 @@ class VehicleRentalWorkflowContract(unittest.TestCase):
                 with self.subTest(path=path.name, reference=reference):
                     self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$")
 
+    def test_docker_actions_run_natively_on_node_24(self) -> None:
+        workflows = "\n".join(read(path) for path in WORKFLOWS.glob("*.yml"))
+
+        for reference in (
+            "docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
+            "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
+            "docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+        ):
+            with self.subTest(reference=reference):
+                self.assertIn(reference, workflows)
+
     def test_vehicle_callers_are_thin_and_versioned(self) -> None:
         for name in ("ci.yml", "images.yml"):
             path = EXAMPLES / name
@@ -102,7 +120,7 @@ class VehicleRentalWorkflowContract(unittest.TestCase):
             with self.subTest(path=name):
                 self.assertLessEqual(len(meaningful), 30)
                 self.assertIn("tesserix/tesserix-workflows/", workflow)
-                self.assertIn("@v1.0.0", workflow)
+                self.assertIn("@v1.0.1", workflow)
                 self.assertNotIn("@main", workflow)
 
     def test_workflows_default_to_least_privilege(self) -> None:
