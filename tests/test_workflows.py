@@ -237,8 +237,9 @@ class ReusableWorkflowContract(unittest.TestCase):
             "sha256sum -c -",
             ".gitleaks-baseline.json",
             "--baseline-path",
-            "gitleaks dir . --no-banner --redact",
+            "gitleaks git . --no-banner --redact",
         )
+        self.assertNotIn("gitleaks dir", read(WORKFLOWS / "secret-scan.yml"))
 
     def test_orchestrator_composes_capabilities_and_has_one_stable_gate(self) -> None:
         self.assert_workflow_contains(
@@ -279,9 +280,9 @@ class ReusableWorkflowContract(unittest.TestCase):
     def test_permissions_are_least_privilege(self) -> None:
         for name in REUSABLE_WORKFLOWS - {"container-release.yml"}:
             with self.subTest(workflow=name):
-                self.assertRegex(
-                    read(WORKFLOWS / name), r"permissions:\s+contents: read"
-                )
+                workflow = read(WORKFLOWS / name)
+                self.assertRegex(workflow, r"permissions:\s+contents: read")
+                self.assertNotIn("packages: read", workflow)
         self.assertRegex(
             read(WORKFLOWS / "container-release.yml"),
             r"permissions:\s+contents: read\s+packages: write\s+id-token: write",
