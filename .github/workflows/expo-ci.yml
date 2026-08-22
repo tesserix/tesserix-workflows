@@ -47,6 +47,10 @@ on:
         description: Run the standard lint package script
         type: boolean
         default: true
+      lint_suppressions_path:
+        description: Optional repository-relative ESLint 9 suppressions file
+        type: string
+        default: ""
       test_enabled:
         description: Run the standard test package script
         type: boolean
@@ -95,6 +99,7 @@ jobs:
           AUDIT_CI_VERSION: ${{ inputs.audit_ci_version }}
           AUDIT_CONFIG_PATH: ${{ inputs.audit_config_path }}
           EXPO_DOCTOR_VERSION: ${{ inputs.expo_doctor_version }}
+          LINT_SUPPRESSIONS_PATH: ${{ inputs.lint_suppressions_path }}
           PACKAGE_MANAGER: ${{ inputs.package_manager }}
           PNPM_VERSION: ${{ inputs.pnpm_version }}
         run: |
@@ -105,6 +110,11 @@ jobs:
             [[ "$AUDIT_CONFIG_PATH" != /* ]]
             [[ "$AUDIT_CONFIG_PATH" != *..* ]]
             [[ -f "$GITHUB_WORKSPACE/$AUDIT_CONFIG_PATH" ]]
+          fi
+          if [[ -n "$LINT_SUPPRESSIONS_PATH" ]]; then
+            [[ "$LINT_SUPPRESSIONS_PATH" != /* ]]
+            [[ "$LINT_SUPPRESSIONS_PATH" != *..* ]]
+            [[ -f "$GITHUB_WORKSPACE/$LINT_SUPPRESSIONS_PATH" ]]
           fi
           if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
             [[ "$PNPM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
@@ -169,12 +179,17 @@ jobs:
       - name: Lint
         if: ${{ inputs.lint_enabled }}
         env:
+          LINT_SUPPRESSIONS_PATH: ${{ inputs.lint_suppressions_path }}
           PACKAGE_MANAGER: ${{ inputs.package_manager }}
         run: |
+          lint_args=()
+          if [[ -n "$LINT_SUPPRESSIONS_PATH" ]]; then
+            lint_args+=(-- --suppressions-location "$GITHUB_WORKSPACE/$LINT_SUPPRESSIONS_PATH" --prune-suppressions)
+          fi
           if [[ "$PACKAGE_MANAGER" == "npm" ]]; then
-            npm run lint
+            npm run lint "${lint_args[@]}"
           else
-            pnpm run lint
+            pnpm run lint "${lint_args[@]}"
           fi
 
       - name: Test
