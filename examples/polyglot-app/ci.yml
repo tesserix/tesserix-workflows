@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: tesserix/tesserix-workflows/.github/workflows/ci.yml@v2.0.0
+    with:
+      rust_enabled: true
+      rust_toolchain: "1.97"
+      rust_coverage_min_lines: 70
+      nextjs_enabled: true
+      node_version: "22"
+      containers_enabled: true
+      container_images: >-
+        {"include":[{"name":"api","context":".","dockerfile":"docker/api.Dockerfile","build_args":"","smoke_port":0,"smoke_path":"/healthz"},{"name":"web","context":".","dockerfile":"docker/web.Dockerfile","build_args":"","smoke_port":3000,"smoke_path":"/healthz"}]}
+    secrets:
+      package_read_token: ${{ secrets.PACKAGE_READ_TOKEN }}

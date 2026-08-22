@@ -1,0 +1,77 @@
+name: Python CI
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing pyproject.toml and uv.lock
+        type: string
+        default: .
+      python_version:
+        description: Python runtime version
+        type: string
+        default: "3.13"
+      uv_version:
+        description: uv version
+        type: string
+        default: 0.9.26
+      source_directory:
+        description: Typed package source directory
+        type: string
+        default: src
+      coverage_min_lines:
+        description: Minimum total line coverage percentage
+        type: number
+        default: 70
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Python quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ inputs.uv_version }}
+          enable-cache: true
+          cache-dependency-glob: ${{ inputs.working_directory }}/uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Typecheck
+        env:
+          SOURCE_DIRECTORY: ${{ inputs.source_directory }}
+        run: uv run mypy --strict "$SOURCE_DIRECTORY"
+
+      - name: Test with coverage
+        env:
+          COVERAGE_MIN: ${{ inputs.coverage_min_lines }}
+          SOURCE_DIRECTORY: ${{ inputs.source_directory }}
+        run: >-
+          uv run pytest --cov="$SOURCE_DIRECTORY" --cov-report=term-missing
+          --cov-fail-under="$COVERAGE_MIN"
+
+      - name: Audit dependencies
+        run: uv run --with pip-audit==2.9.0 pip-audit
+
+      - name: Build package
+        run: uv build

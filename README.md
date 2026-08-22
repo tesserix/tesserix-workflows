@@ -1,22 +1,38 @@
 # Tesserix workflows
 
-Versioned reusable GitHub Actions workflows for Tesserix products. Product
-repositories keep only a thin event-and-permissions caller; policy and tooling
-live here.
+Versioned, product-neutral GitHub Actions workflows for Tesserix repositories.
+Product repositories own triggers and product policy; this repository owns the
+repeatable implementation of quality, security, and image-supply-chain gates.
 
-## First adopter: vehicle rental
-
-| Workflow | Promise |
+| Workflow | Contract |
 | --- | --- |
-| `vehicle-rental-ci.yml` | Rust and Next.js format, lint, build, tests, coverage, dependency and secret scanning, plus PR image builds and vulnerability scans |
-| `vehicle-rental-images.yml` | Four GHCR images built once, scanned, given an SBOM and provenance, then keylessly signed by digest |
+| `ci.yml` | Composes enabled capabilities and exposes one stable aggregate gate |
+| `go-ci.yml` | Format, dependency verification, vet, build, race tests, coverage, and vulnerability audit |
+| `python-ci.yml` | Locked uv install, Ruff, strict mypy, pytest coverage, dependency audit, and package build |
+| `rust-ci.yml` | Format, Clippy, build, tests, audit, coverage, and optional Postgres integration coverage |
+| `nextjs-ci.yml` | Locked npm install, format, lint, tests, typecheck, audit, and production build |
+| `container-ci.yml` | Matrix build, optional HTTP smoke test, and blocking Trivy scan |
+| `container-release.yml` | GHCR publish with smoke test, SBOM, provenance, digest scan, and keyless signing |
+| `secret-scan.yml` | Full-history Gitleaks scan with a checksum-verified binary |
 
-Copy the callers from [`examples/vehicle-rental-app`](examples/vehicle-rental-app)
-into the product's `.github/workflows` directory. Callers use an immutable
-release such as `v1.0.0`; never use `main`.
+## Caller contract
 
-The current design and migration/rollback contract are recorded in
-[`ADR-0001`](docs/adr/0001-vehicle-rental-first-adopter.md).
+Callers pin an immutable semantic release such as `v2.0.0`; they never use
+`main`. Inputs describe intent and repository layout, not shell commands:
+
+- enabled language capabilities and their working directories;
+- toolchain versions and coverage floors;
+- an immutable database image and validated bootstrap-script path when needed;
+- a JSON image matrix containing Dockerfiles, build arguments, and smoke paths;
+- an explicitly mapped read-only npm token when private packages are used.
+
+Repository-specific coverage baselines, advisory exceptions, schema bootstrap,
+and image names remain with the product. Standard package scripts are the
+language boundary; the shared workflow does not accept arbitrary commands.
+
+See [`examples/polyglot-app`](examples/polyglot-app) for thin CI and release
+callers. The boundary, failure behaviour, migration, and rollback decision is
+recorded in [`ADR-0001`](docs/adr/0001-reusable-workflow-boundaries.md).
 
 ## Validation
 
@@ -25,5 +41,4 @@ python3 -m unittest discover -s tests -v
 actionlint
 ```
 
-The repository CI runs the same contract tests and Actionlint validation.
-Versioned reusable GitHub Actions workflows for Tesserix products
+The repository required check runs the same contract suite and Actionlint.

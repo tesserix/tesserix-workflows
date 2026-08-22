@@ -1,0 +1,60 @@
+name: Next.js CI
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing package.json and package-lock.json
+        type: string
+        default: .
+      node_version:
+        description: Node.js runtime version
+        type: string
+        default: "22"
+    secrets:
+      package_read_token:
+        description: Optional read-only token for private npm packages
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Next.js quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+
+      - name: Install locked dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.package_read_token }}
+        run: npm ci
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run check-types
+
+      - name: Audit production dependencies
+        run: npm audit --audit-level=high --omit=dev
+
+      - name: Build
+        run: npm run build

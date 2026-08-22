@@ -1,0 +1,174 @@
+name: Rust CI
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing Cargo.toml
+        type: string
+        default: .
+      toolchain:
+        description: Rust toolchain version
+        type: string
+        default: stable
+      coverage_min_lines:
+        description: Minimum total line coverage percentage
+        type: number
+        default: 70
+      coverage_ignore_regex:
+        description: Optional generated or test-file exclusion regex
+        type: string
+        default: tests?/
+      database_enabled:
+        description: Run ignored integration tests against Postgres
+        type: boolean
+        default: false
+      database_image:
+        description: Immutable Postgres-compatible service image
+        type: string
+        default: postgres:17-bookworm@sha256:84560e3b9c6874893fc4e2854f5dc3e7c1a37bc9d1dfd7a8c641310ae22ba5ad
+      database_setup_script:
+        description: Repository-relative script that creates the test schema
+        type: string
+        default: ""
+      database_environment_prefix:
+        description: Prefix allowed in setup-script environment output
+        type: string
+        default: TEST_DATABASE_
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: -D warnings
+
+jobs:
+  quality:
+    name: Rust quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install Rust toolchain
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+        run: |
+          [[ "$TOOLCHAIN" =~ ^[A-Za-z0-9._-]+$ ]]
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --component rustfmt,clippy
+          rustup default "$TOOLCHAIN"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: ${{ inputs.working_directory }}
+
+      - name: Install audit tooling
+        uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2
+        with:
+          tool: cargo-audit@0.22.2
+
+      - name: Install coverage tooling
+        uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --workspace --all-features
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+      - name: Audit dependencies
+        run: cargo audit
+
+      - name: Coverage
+        if: ${{ !inputs.database_enabled }}
+        env:
+          COVERAGE_IGNORE_REGEX: ${{ inputs.coverage_ignore_regex }}
+          COVERAGE_MIN: ${{ inputs.coverage_min_lines }}
+        run: |
+          coverage_args=(cargo llvm-cov --workspace --all-features --fail-under-lines "$COVERAGE_MIN")
+          if [[ -n "$COVERAGE_IGNORE_REGEX" ]]; then
+            coverage_args+=(--ignore-filename-regex "$COVERAGE_IGNORE_REGEX")
+          fi
+          "${coverage_args[@]}"
+
+  database-coverage:
+    name: Rust database coverage
+    if: ${{ inputs.database_enabled }}
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: ${{ inputs.database_image }}
+        env:
+          POSTGRES_PASSWORD: local
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install Rust toolchain
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+        run: |
+          [[ "$TOOLCHAIN" =~ ^[A-Za-z0-9._-]+$ ]]
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: ${{ inputs.working_directory }}
+
+      - name: Install coverage tooling
+        uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Prepare database
+        env:
+          ENVIRONMENT_PREFIX: ${{ inputs.database_environment_prefix }}
+          SETUP_SCRIPT: ${{ inputs.database_setup_script }}
+          PGPASSWORD: local
+        run: |
+          [[ "$SETUP_SCRIPT" != /* && "$SETUP_SCRIPT" != *".."* ]]
+          [[ "$ENVIRONMENT_PREFIX" =~ ^[A-Z][A-Z0-9_]*_$ ]]
+          test -f "$SETUP_SCRIPT"
+          setup_output=$(mktemp)
+          bash "$SETUP_SCRIPT" > "$setup_output"
+          while IFS= read -r line; do
+            key=${line%%=*}
+            [[ "$key" =~ ^${ENVIRONMENT_PREFIX}[A-Z0-9_]+$ ]]
+            printf '%s\n' "$line" >> "$GITHUB_ENV"
+          done < "$setup_output"
+          rm -f "$setup_output"
+
+      - name: Database test coverage
+        env:
+          COVERAGE_IGNORE_REGEX: ${{ inputs.coverage_ignore_regex }}
+          COVERAGE_MIN: ${{ inputs.coverage_min_lines }}
+          PGPASSWORD: local
+        run: |
+          coverage_args=(cargo llvm-cov --workspace --all-features --fail-under-lines "$COVERAGE_MIN")
+          if [[ -n "$COVERAGE_IGNORE_REGEX" ]]; then
+            coverage_args+=(--ignore-filename-regex "$COVERAGE_IGNORE_REGEX")
+          fi
+          "${coverage_args[@]}" -- --include-ignored

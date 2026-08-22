@@ -1,0 +1,74 @@
+name: Go CI
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing go.mod
+        type: string
+        default: .
+      go_version:
+        description: Go toolchain version
+        type: string
+        default: 1.26.x
+      coverage_min_lines:
+        description: Minimum total line coverage percentage
+        type: number
+        default: 70
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Go quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache-dependency-path: ${{ inputs.working_directory }}/go.sum
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Format
+        run: |
+          unformatted=$(gofmt -l .)
+          if [[ -n "$unformatted" ]]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test with race detection and coverage
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Enforce coverage floor
+        env:
+          COVERAGE_MIN: ${{ inputs.coverage_min_lines }}
+        run: |
+          coverage=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%", "", $3); print $3}')
+          awk -v actual="$coverage" -v minimum="$COVERAGE_MIN" \
+            'BEGIN { if (actual + 0 < minimum + 0) exit 1 }'
+
+      - name: Install vulnerability tooling
+        env:
+          GOBIN: ${{ runner.temp }}/go-tools
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          echo "$GOBIN" >> "$GITHUB_PATH"
+
+      - name: Audit dependencies
+        run: govulncheck ./...

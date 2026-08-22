@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  workflow_call:
+    inputs:
+      go_enabled:
+        description: Run the Go quality workflow
+        type: boolean
+        default: false
+      go_working_directory:
+        type: string
+        default: .
+      go_version:
+        type: string
+        default: 1.26.x
+      go_coverage_min_lines:
+        type: number
+        default: 70
+      python_enabled:
+        description: Run the Python quality workflow
+        type: boolean
+        default: false
+      python_working_directory:
+        type: string
+        default: .
+      python_version:
+        type: string
+        default: "3.13"
+      python_uv_version:
+        type: string
+        default: 0.9.26
+      python_source_directory:
+        type: string
+        default: src
+      python_coverage_min_lines:
+        type: number
+        default: 70
+      rust_enabled:
+        description: Run the Rust quality workflow
+        type: boolean
+        default: false
+      rust_working_directory:
+        type: string
+        default: .
+      rust_toolchain:
+        type: string
+        default: stable
+      rust_coverage_min_lines:
+        type: number
+        default: 70
+      rust_coverage_ignore_regex:
+        type: string
+        default: tests?/
+      rust_database_enabled:
+        type: boolean
+        default: false
+      rust_database_image:
+        type: string
+        default: postgres:17-bookworm@sha256:84560e3b9c6874893fc4e2854f5dc3e7c1a37bc9d1dfd7a8c641310ae22ba5ad
+      rust_database_setup_script:
+        type: string
+        default: ""
+      rust_database_environment_prefix:
+        type: string
+        default: TEST_DATABASE_
+      nextjs_enabled:
+        description: Run the Next.js quality workflow
+        type: boolean
+        default: false
+      nextjs_working_directory:
+        type: string
+        default: .
+      node_version:
+        type: string
+        default: "22"
+      containers_enabled:
+        description: Build, smoke-test, and scan the image matrix
+        type: boolean
+        default: false
+      container_images:
+        description: JSON matrix accepted by container-ci.yml
+        type: string
+        default: '{"include":[]}'
+    secrets:
+      package_read_token:
+        description: Optional read-only token for private npm packages
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go
+    if: ${{ inputs.go_enabled }}
+    uses: ./.github/workflows/go-ci.yml
+    with:
+      working_directory: ${{ inputs.go_working_directory }}
+      go_version: ${{ inputs.go_version }}
+      coverage_min_lines: ${{ inputs.go_coverage_min_lines }}
+
+  python:
+    name: Python
+    if: ${{ inputs.python_enabled }}
+    uses: ./.github/workflows/python-ci.yml
+    with:
+      working_directory: ${{ inputs.python_working_directory }}
+      python_version: ${{ inputs.python_version }}
+      uv_version: ${{ inputs.python_uv_version }}
+      source_directory: ${{ inputs.python_source_directory }}
+      coverage_min_lines: ${{ inputs.python_coverage_min_lines }}
+
+  rust:
+    name: Rust
+    if: ${{ inputs.rust_enabled }}
+    uses: ./.github/workflows/rust-ci.yml
+    with:
+      working_directory: ${{ inputs.rust_working_directory }}
+      toolchain: ${{ inputs.rust_toolchain }}
+      coverage_min_lines: ${{ inputs.rust_coverage_min_lines }}
+      coverage_ignore_regex: ${{ inputs.rust_coverage_ignore_regex }}
+      database_enabled: ${{ inputs.rust_database_enabled }}
+      database_image: ${{ inputs.rust_database_image }}
+      database_setup_script: ${{ inputs.rust_database_setup_script }}
+      database_environment_prefix: ${{ inputs.rust_database_environment_prefix }}
+
+  nextjs:
+    name: Next.js
+    if: ${{ inputs.nextjs_enabled }}
+    uses: ./.github/workflows/nextjs-ci.yml
+    with:
+      working_directory: ${{ inputs.nextjs_working_directory }}
+      node_version: ${{ inputs.node_version }}
+    secrets:
+      package_read_token: ${{ secrets.package_read_token }}
+
+  containers:
+    name: Containers
+    if: ${{ inputs.containers_enabled }}
+    uses: ./.github/workflows/container-ci.yml
+    with:
+      images: ${{ inputs.container_images }}
+
+  secrets:
+    name: Secrets
+    uses: ./.github/workflows/secret-scan.yml
+
+  gate:
+    name: CI gate
+    if: ${{ always() }}
+    needs: [go, python, rust, nextjs, containers, secrets]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse failed or cancelled capabilities
+        env:
+          HAS_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
+          HAS_FAILURE: ${{ contains(needs.*.result, 'failure') }}
+        run: |
+          test "$HAS_CANCELLED" = false
+          test "$HAS_FAILURE" = false
