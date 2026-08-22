@@ -1,89 +1,154 @@
-from pathlib import Path
+from __future__ import annotations
+
 import re
 import unittest
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
-EXAMPLES = ROOT / "examples" / "vehicle-rental-app"
+EXAMPLES = ROOT / "examples"
+REUSABLE_WORKFLOWS = {
+    "ci.yml",
+    "container-ci.yml",
+    "container-release.yml",
+    "go-ci.yml",
+    "nextjs-ci.yml",
+    "python-ci.yml",
+    "rust-ci.yml",
+    "secret-scan.yml",
+}
 
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-class VehicleRentalWorkflowContract(unittest.TestCase):
-    def test_ci_workflow_keeps_every_mandatory_gate(self) -> None:
-        workflow = read(WORKFLOWS / "vehicle-rental-ci.yml")
+class ReusableWorkflowContract(unittest.TestCase):
+    def assert_workflow_contains(self, name: str, *guarantees: str) -> None:
+        workflow = read(WORKFLOWS / name)
+        for guarantee in guarantees:
+            with self.subTest(workflow=name, guarantee=guarantee):
+                self.assertIn(guarantee, workflow)
 
-        for gate in (
-            "workflow_call:",
+    def test_repository_exposes_only_global_reusable_workflow_names(self) -> None:
+        actual = {
+            path.name
+            for path in WORKFLOWS.glob("*.yml")
+            if path.name != "validate.yml"
+        }
+        self.assertEqual(REUSABLE_WORKFLOWS, actual)
+
+    def test_every_reusable_workflow_fails_closed(self) -> None:
+        for name in REUSABLE_WORKFLOWS:
+            workflow = read(WORKFLOWS / name)
+            with self.subTest(workflow=name):
+                self.assertIn("workflow_call:", workflow)
+                self.assertNotIn("continue-on-error", workflow)
+                self.assertNotIn("secrets: inherit", workflow)
+                self.assertNotRegex(workflow, r"\b(?:build|lint|test|run)_command:")
+
+    def test_go_workflow_enforces_the_complete_language_gate(self) -> None:
+        self.assert_workflow_contains(
+            "go-ci.yml",
+            "actions/setup-go@",
+            "gofmt -l .",
+            "go mod verify",
+            "go vet ./...",
+            "go build ./...",
+            "go test -race",
+            "govulncheck ./...",
+            "coverage_min_lines",
+        )
+
+    def test_python_workflow_enforces_the_complete_language_gate(self) -> None:
+        self.assert_workflow_contains(
+            "python-ci.yml",
+            "actions/setup-python@",
+            "astral-sh/setup-uv@",
+            "uv sync --locked --all-extras --dev",
+            "ruff format --check",
+            "ruff check",
+            "mypy --strict",
+            "pytest --cov",
+            "--cov-fail-under",
+            "pip-audit",
+            "uv build",
+        )
+
+    def test_rust_workflow_enforces_quality_and_optional_database_coverage(
+        self,
+    ) -> None:
+        self.assert_workflow_contains(
+            "rust-ci.yml",
             "cargo fmt --all --check",
             "cargo clippy --workspace --all-targets -- -D warnings",
-            "cargo test --workspace --test boundaries",
-            "cargo llvm-cov --workspace --all-features",
-            "--fail-under-lines 52",
-            "scripts/test-db.sh",
+            "cargo build --workspace --all-features",
+            "cargo test --workspace --all-features",
             "cargo audit",
+            "cargo llvm-cov --workspace --all-features",
+            "database_enabled",
+            "database_image",
+            "database_setup_script",
+            "--include-ignored",
+            "coverage_min_lines",
+        )
+        self.assertNotIn("RUSTSEC-", read(WORKFLOWS / "rust-ci.yml"))
+
+    def test_nextjs_workflow_enforces_the_complete_framework_gate(self) -> None:
+        self.assert_workflow_contains(
+            "nextjs-ci.yml",
+            "actions/setup-node@",
             "npm ci",
+            "npm run format:check",
             "npm run lint",
             "npm test",
             "npm run check-types",
-            "npm run build",
             "npm audit --audit-level=high --omit=dev",
-            "gitleaks dir . --no-banner --redact",
-        ):
-            with self.subTest(gate=gate):
-                self.assertIn(gate, workflow)
-
-        self.assertNotIn("continue-on-error", workflow)
-        self.assertNotIn("Test, without a database", workflow)
-
-        coverage_policy = read(
-            ROOT / "docs" / "quality-gates" / "vehicle-rental-coverage.md"
+            "npm run build",
         )
-        self.assertIn("52.70%", coverage_policy)
-        self.assertIn("70%", coverage_policy)
 
-    def test_image_workflow_builds_scans_attests_and_signs_each_image(self) -> None:
-        workflow = read(WORKFLOWS / "vehicle-rental-images.yml")
-
-        for image in (
-            "vehicle-rental-api",
-            "vehicle-rental-storefront",
-            "vehicle-rental-admin",
-            "vehicle-rental-onboarding",
-        ):
-            with self.subTest(image=image):
-                self.assertIn(image, workflow)
-
-        for guarantee in (
-            "workflow_call:",
+    def test_container_workflows_build_smoke_scan_and_release_by_digest(self) -> None:
+        self.assert_workflow_contains(
+            "container-ci.yml",
+            "fromJSON(inputs.images)",
+            "docker/build-push-action@",
+            "Smoke test image",
+            "aquasecurity/trivy-action@",
+            "severity: CRITICAL,HIGH",
+            "exit-code: 1",
+        )
+        self.assert_workflow_contains(
+            "container-release.yml",
+            "fromJSON(inputs.images)",
             "push: true",
             "sbom: true",
             "provenance: mode=max",
-            "Smoke test the web image",
-            "severity: CRITICAL,HIGH",
-            "exit-code: 1",
-            "cosign sign --yes",
+            "Smoke test published image",
             "steps.build.outputs.digest",
-        ):
-            with self.subTest(guarantee=guarantee):
-                self.assertIn(guarantee, workflow)
-
-    def test_rust_audit_exception_is_central_and_documented(self) -> None:
-        workflow = read(WORKFLOWS / "vehicle-rental-ci.yml")
-        exception = read(
-            ROOT
-            / "docs"
-            / "security-exceptions"
-            / "vehicle-rental-rustsec-2023-0071.md"
+            "cosign sign --yes",
         )
 
-        self.assertIn("cargo audit --ignore RUSTSEC-2023-0071", workflow)
-        self.assertEqual(workflow.count("--ignore RUSTSEC-2023-0071"), 1)
-        self.assertIn("RUSTSEC-2023-0071", exception)
-        self.assertIn("2026-11-22", exception)
+    def test_secret_scan_is_a_single_reusable_gate(self) -> None:
+        self.assert_workflow_contains(
+            "secret-scan.yml",
+            "fetch-depth: 0",
+            "sha256sum -c -",
+            "gitleaks dir . --no-banner --redact",
+        )
+
+    def test_orchestrator_composes_capabilities_and_has_one_stable_gate(self) -> None:
+        self.assert_workflow_contains(
+            "ci.yml",
+            "./.github/workflows/go-ci.yml",
+            "./.github/workflows/python-ci.yml",
+            "./.github/workflows/rust-ci.yml",
+            "./.github/workflows/nextjs-ci.yml",
+            "./.github/workflows/container-ci.yml",
+            "./.github/workflows/secret-scan.yml",
+            "name: CI gate",
+            "needs.*.result",
+        )
 
     def test_external_actions_are_pinned_to_full_commit_shas(self) -> None:
         for path in WORKFLOWS.glob("*.yml"):
@@ -97,42 +162,46 @@ class VehicleRentalWorkflowContract(unittest.TestCase):
                 with self.subTest(path=path.name, reference=reference):
                     self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$")
 
-    def test_docker_actions_run_natively_on_node_24(self) -> None:
-        workflows = "\n".join(read(path) for path in WORKFLOWS.glob("*.yml"))
+    def test_permissions_are_least_privilege(self) -> None:
+        for name in REUSABLE_WORKFLOWS - {"container-release.yml"}:
+            with self.subTest(workflow=name):
+                self.assertRegex(
+                    read(WORKFLOWS / name), r"permissions:\s+contents: read"
+                )
+        self.assertRegex(
+            read(WORKFLOWS / "container-release.yml"),
+            r"permissions:\s+contents: read\s+packages: write\s+id-token: write",
+        )
 
-        for reference in (
-            "docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
-            "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
-            "docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
-        ):
-            with self.subTest(reference=reference):
-                self.assertIn(reference, workflows)
-
-    def test_vehicle_callers_are_thin_and_versioned(self) -> None:
-        for name in ("ci.yml", "images.yml"):
-            path = EXAMPLES / name
+    def test_examples_are_thin_and_pin_the_v2_release(self) -> None:
+        callers = list(EXAMPLES.rglob("*.yml"))
+        self.assertGreaterEqual(len(callers), 2)
+        for path in callers:
             workflow = read(path)
             meaningful = [
                 line
                 for line in workflow.splitlines()
                 if line.strip() and not line.lstrip().startswith("#")
             ]
-            with self.subTest(path=name):
-                self.assertLessEqual(len(meaningful), 30)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertLessEqual(len(meaningful), 45)
                 self.assertIn("tesserix/tesserix-workflows/", workflow)
-                self.assertIn("@v1.0.1", workflow)
+                self.assertIn("@v2.0.0", workflow)
                 self.assertNotIn("@main", workflow)
 
-    def test_workflows_default_to_least_privilege(self) -> None:
-        ci = read(WORKFLOWS / "vehicle-rental-ci.yml")
-        images = read(WORKFLOWS / "vehicle-rental-images.yml")
-
-        self.assertRegex(ci, r"permissions:\s+contents: read")
-        self.assertRegex(
-            images,
-            r"permissions:\s+contents: read\s+packages: write\s+id-token: write",
-        )
-        self.assertNotIn("secrets: inherit", read(EXAMPLES / "ci.yml"))
+    def test_architecture_decision_records_migration_and_rollback(self) -> None:
+        decision = read(ROOT / "docs" / "adr" / "0001-reusable-workflow-boundaries.md")
+        for guarantee in (
+            "20 product repositories",
+            "p95",
+            "five minutes",
+            "Failure behaviour",
+            "Migration",
+            "Rollback",
+            "v2.0.0",
+        ):
+            with self.subTest(guarantee=guarantee):
+                self.assertIn(guarantee, decision)
 
 
 if __name__ == "__main__":

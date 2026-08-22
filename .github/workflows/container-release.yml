@@ -1,0 +1,115 @@
+name: Container release
+
+on:
+  workflow_call:
+    inputs:
+      namespace:
+        description: GHCR organization or user namespace
+        type: string
+        required: true
+      images:
+        description: JSON matrix with name, context, dockerfile, build_args, smoke_port, and smoke_path
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  release-guard:
+    name: Main branch release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse releases outside main
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          test "$RELEASE_REF" = refs/heads/main
+          [[ "$NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]]
+
+  publish:
+    name: Publish — ${{ matrix.name }}
+    needs: release-guard
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.images) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Short commit SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Validate image contract
+        env:
+          IMAGE_NAME: ${{ matrix.name }}
+          SMOKE_PATH: ${{ matrix.smoke_path }}
+          SMOKE_PORT: ${{ matrix.smoke_port }}
+        run: |
+          [[ "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]*$ ]]
+          [[ "$SMOKE_PORT" =~ ^[0-9]+$ ]]
+          [[ "$SMOKE_PATH" == /* && "$SMOKE_PATH" != *[[:space:]]* ]]
+
+      - name: Build, attest, and publish
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          build-args: ${{ matrix.build_args }}
+          tags: |
+            ghcr.io/${{ inputs.namespace }}/${{ matrix.name }}:main-${{ steps.sha.outputs.short }}
+            ghcr.io/${{ inputs.namespace }}/${{ matrix.name }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ matrix.name }}
+          cache-from: type=gha,scope=main-${{ matrix.name }}
+          cache-to: type=gha,scope=main-${{ matrix.name }},mode=max
+          sbom: true
+          provenance: mode=max
+
+      - name: Smoke test published image
+        if: ${{ matrix.smoke_port != 0 }}
+        env:
+          IMAGE_REF: ghcr.io/${{ inputs.namespace }}/${{ matrix.name }}@${{ steps.build.outputs.digest }}
+          SMOKE_PATH: ${{ matrix.smoke_path }}
+          SMOKE_PORT: ${{ matrix.smoke_port }}
+        run: |
+          docker pull "$IMAGE_REF"
+          container_id=$(docker run --detach --rm --publish "$SMOKE_PORT:$SMOKE_PORT" "$IMAGE_REF")
+          trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
+          curl --retry 20 --retry-all-errors --retry-delay 1 \
+            --retry-max-time 30 --fail --silent --show-error --output /dev/null \
+            "http://127.0.0.1:${SMOKE_PORT}${SMOKE_PATH}"
+
+      - name: Scan published digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ inputs.namespace }}/${{ matrix.name }}@${{ steps.build.outputs.digest }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign published digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ inputs.namespace }}/${{ matrix.name }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
