@@ -127,7 +127,7 @@ class ReusableWorkflowContract(unittest.TestCase):
             "trivyignores: ${{ matrix.trivy_ignore_file }}",
             "PACKAGE_READ_TOKEN=${{ secrets.package_read_token }}",
             "APPLICATION_BUILD_SECRET=${{ secrets.application_build_secret }}",
-            "REUSABLE_BUILD_SECRET_FP",
+            "REUSABLE_BUILD_CACHE_FP",
             "REUSABLE_PUBLIC_BUILD_ARG_8=${{ secrets.public_build_arg_8 }}",
         )
         self.assert_workflow_contains(
@@ -144,8 +144,14 @@ class ReusableWorkflowContract(unittest.TestCase):
             "trivyignores: ${{ matrix.trivy_ignore_file }}",
             "PACKAGE_READ_TOKEN=${{ secrets.package_read_token }}",
             "APPLICATION_BUILD_SECRET=${{ secrets.application_build_secret }}",
-            "REUSABLE_BUILD_SECRET_FP",
+            "REUSABLE_BUILD_CACHE_FP",
             "REUSABLE_PUBLIC_BUILD_ARG_8=${{ secrets.public_build_arg_8 }}",
+        )
+        self.assertNotIn(
+            "REUSABLE_BUILD_SECRET_FP", read(WORKFLOWS / "container-ci.yml")
+        )
+        self.assertNotIn(
+            "REUSABLE_BUILD_SECRET_FP", read(WORKFLOWS / "container-release.yml")
         )
 
     def test_secret_scan_is_a_single_reusable_gate(self) -> None:

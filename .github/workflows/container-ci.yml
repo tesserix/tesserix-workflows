@@ -116,7 +116,7 @@ jobs:
           push: false
           build-args: |
             ${{ matrix.build_args }}
-            REUSABLE_BUILD_SECRET_FP=${{ steps.build-inputs.outputs.secret_fingerprint }}
+            REUSABLE_BUILD_CACHE_FP=${{ steps.build-inputs.outputs.secret_fingerprint }}
             REUSABLE_PUBLIC_BUILD_ARG_1=${{ secrets.public_build_arg_1 }}
             REUSABLE_PUBLIC_BUILD_ARG_2=${{ secrets.public_build_arg_2 }}
             REUSABLE_PUBLIC_BUILD_ARG_3=${{ secrets.public_build_arg_3 }}
