@@ -23,6 +23,10 @@ on:
         description: Minimum total line coverage percentage
         type: number
         default: 70
+    secrets:
+      package_read_token:
+        description: Optional read-only token for private Git dependencies
+        required: false
 
 permissions:
   contents: read
@@ -49,6 +53,10 @@ jobs:
           cache-dependency-glob: ${{ inputs.working_directory }}/uv.lock
 
       - name: Install locked dependencies
+        env:
+          GIT_CONFIG_COUNT: ${{ secrets.package_read_token != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.package_read_token }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
         run: uv sync --locked --all-extras --dev
 
       - name: Format

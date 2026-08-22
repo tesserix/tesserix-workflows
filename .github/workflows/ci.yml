@@ -151,7 +151,7 @@ on:
         default: '{"include":[]}'
     secrets:
       package_read_token:
-        description: Optional read-only token for private npm packages
+        description: Optional read-only token for private package dependencies
         required: false
       container_registry_token:
         description: Optional token for private registry dependencies
@@ -210,6 +210,8 @@ jobs:
       uv_version: ${{ inputs.python_uv_version }}
       source_directory: ${{ inputs.python_source_directory }}
       coverage_min_lines: ${{ inputs.python_coverage_min_lines }}
+    secrets:
+      package_read_token: ${{ secrets.package_read_token }}
 
   rust:
     name: Rust

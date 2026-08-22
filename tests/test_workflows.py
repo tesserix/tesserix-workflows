@@ -78,6 +78,9 @@ class ReusableWorkflowContract(unittest.TestCase):
             "python-ci.yml",
             "actions/setup-python@",
             "astral-sh/setup-uv@",
+            "package_read_token:",
+            "GIT_CONFIG_KEY_0:",
+            "secrets.package_read_token",
             "uv sync --locked --all-extras --dev",
             "ruff format --check",
             "ruff check",
@@ -86,6 +89,11 @@ class ReusableWorkflowContract(unittest.TestCase):
             "--cov-fail-under",
             "pip-audit",
             "uv build",
+        )
+        self.assertRegex(
+            read(WORKFLOWS / "ci.yml"),
+            r"(?s)  python:.*?secrets:\s+package_read_token: "
+            r"\$\{\{ secrets\.package_read_token \}\}.*?\n\n  rust:",
         )
 
     def test_rust_workflow_enforces_quality_and_optional_database_coverage(
@@ -261,6 +269,7 @@ class ReusableWorkflowContract(unittest.TestCase):
             "expo_audit_config_path:",
             "expo_lint_suppressions_path:",
             "container_registry_token:",
+            "package_read_token: ${{ secrets.package_read_token }}",
             "container_application_build_secret:",
             "container_public_build_arg_8:",
         )
