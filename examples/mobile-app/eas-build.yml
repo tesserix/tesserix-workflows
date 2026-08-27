@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   build:
-    uses: tesserix/tesserix-workflows/.github/workflows/expo-eas-build.yml@v2.1.0
+    uses: tesserix/tesserix-workflows/.github/workflows/expo-eas-build.yml@v2.2.0
     with:
       working_directory: apps/mobile
       install_directory: apps/mobile

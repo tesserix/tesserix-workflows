@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   ci:
-    uses: tesserix/tesserix-workflows/.github/workflows/ci.yml@v2.1.0
+    uses: tesserix/tesserix-workflows/.github/workflows/ci.yml@v2.2.0
     with:
       expo_enabled: true
       expo_working_directory: apps/mobile

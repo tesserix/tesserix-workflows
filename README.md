@@ -20,7 +20,7 @@ repeatable implementation of quality, security, and image-supply-chain gates.
 
 ## Caller contract
 
-Callers pin an immutable semantic release such as `v2.1.0`; they never use
+Callers pin an immutable semantic release such as `v2.2.0`; they never use
 `main`. Inputs describe intent and repository layout, not shell commands:
 
 - enabled language capabilities and their working directories;

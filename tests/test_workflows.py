@@ -241,6 +241,31 @@ class ReusableWorkflowContract(unittest.TestCase):
             "REUSABLE_BUILD_SECRET_FP", read(WORKFLOWS / "container-release.yml")
         )
 
+    def test_published_images_carry_a_build_time_that_moves(self) -> None:
+        """A cache-hit build must not publish a stale `created` timestamp.
+
+        BuildKit inherits the image config's `created` from cache, so a
+        commit that changes no code for an image -- a base repin, a
+        dependency bump -- publishes a new digest carrying an old build
+        time. Anything that ranks images by build time (Kargo's
+        `NewestBuild`, image-updater policies) then ranks the new image
+        BELOW an older one and silently stops deploying.
+
+        The committer date is the right source: identical across a rerun
+        of the same commit, strictly increasing along main.
+        """
+        self.assert_workflow_contains(
+            "container-release.yml",
+            "SOURCE_DATE_EPOCH: ${{ steps.sha.outputs.epoch }}",
+            'echo "epoch=$(git log -1 --format=%ct HEAD)" >> "$GITHUB_OUTPUT"',
+        )
+        # `date +%s` would break rerun-identity: the same commit rebuilt
+        # would claim a different build time every run.
+        self.assertNotIn(
+            "SOURCE_DATE_EPOCH: ${{ github.run_id }}",
+            read(WORKFLOWS / "container-release.yml"),
+        )
+
     def test_secret_scan_is_a_single_reusable_gate(self) -> None:
         self.assert_workflow_contains(
             "secret-scan.yml",
@@ -314,7 +339,7 @@ class ReusableWorkflowContract(unittest.TestCase):
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertLessEqual(len(meaningful), 45)
                 self.assertIn("tesserix/tesserix-workflows/", workflow)
-                self.assertIn("@v2.1.0", workflow)
+                self.assertIn("@v2.2.0", workflow)
                 self.assertNotIn("@main", workflow)
 
     def test_architecture_decision_records_migration_and_rollback(self) -> None:
