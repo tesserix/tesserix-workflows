@@ -51,6 +51,13 @@ explicit public build values. Secret values stay on BuildKit secret mounts;
 only values already intended for the published client or image configuration
 may use the public build-argument interface.
 
+`v2.2.0` adds one guarantee and no inputs: every published image carries a
+`created` timestamp taken from the commit's committer date. BuildKit
+otherwise inherits that field from cache, so a base-image repin -- a build
+with no source change -- publishes a new digest advertising an old build
+time, and any consumer that orders images by build time stops deploying
+without reporting a failure.
+
 Expo mobile quality is a fixed capability: locked npm or pnpm installation,
 optional pnpm dependency-workspace build, typed-route generation, typecheck,
 standard package scripts, dependency audit, and a pinned Expo Doctor. Cloud

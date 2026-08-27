@@ -74,9 +74,14 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: Short commit SHA
+      - name: Commit identity
         id: sha
-        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+          # Committer date, not `date +%s`: it must be the SAME value for a
+          # rerun of the same commit, and STRICTLY INCREASING along main.
+          # See SOURCE_DATE_EPOCH on the build step for why.
+          echo "epoch=$(git log -1 --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -121,6 +126,29 @@ jobs:
 
       - name: Build, attest, and publish
         id: build
+        env:
+          # Pin the image config's `created` to the commit's committer date.
+          #
+          # Without this, BuildKit INHERITS `created` from cache on a
+          # cache-hit build, so a commit that changes no code for this image
+          # -- a base-image repin, a dependency bump, the shape of nearly all
+          # security patching -- publishes a new digest carrying an OLD
+          # timestamp. Anything ranking images by build time then ranks the
+          # new image below an older one.
+          #
+          # That is not hypothetical: a base-repin commit stranded three of
+          # one product's eight services on stale tags for two days. Kargo's
+          # `NewestBuild` strategy reads exactly this field, saw five digests
+          # all claiming the same timestamp, broke the tie lexically, and
+          # simply never promoted the new build. No error, no failed job, no
+          # unhealthy pod -- the deploy just did not happen.
+          #
+          # buildx reads SOURCE_DATE_EPOCH from the environment and passes it
+          # to the frontend as a build arg. Verified against buildx v0.35:
+          # it overrides the inherited value on a full cache hit, and two
+          # builds differing ONLY in SOURCE_DATE_EPOCH produce IDENTICAL
+          # layer digests -- so this costs no cache hits and no extra push.
+          SOURCE_DATE_EPOCH: ${{ steps.sha.outputs.epoch }}
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ${{ matrix.context }}

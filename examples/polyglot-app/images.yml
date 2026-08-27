@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   images:
-    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@v2.1.0
+    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@v2.2.0
     with:
       namespace: tesserix
       images: >-
