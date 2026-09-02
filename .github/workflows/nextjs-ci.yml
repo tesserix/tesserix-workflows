@@ -19,6 +19,15 @@ on:
         description: Optional whitespace-separated npm workspaces included in the production audit
         type: string
         default: ""
+      audit_allowlist:
+        description: >-
+          Optional whitespace-separated GHSA/CVE ids tolerated by the production audit.
+          A vulnerability passes only when EVERY advisory it stems from is listed here,
+          so a package picking up an unrelated advisory still fails the gate. Leave empty
+          for a plain `npm audit --audit-level=high`. Keep entries few and justified in
+          the caller's workflow — each one is a known risk being accepted.
+        type: string
+        default: ""
     secrets:
       package_read_token:
         description: Optional read-only token for private npm packages
@@ -70,6 +79,7 @@ jobs:
       - name: Audit production dependencies
         env:
           NPM_AUDIT_WORKSPACES: ${{ inputs.audit_workspaces }}
+          NPM_AUDIT_ALLOWLIST: ${{ inputs.audit_allowlist }}
         run: |
           read -r -a workspaces <<< "$NPM_AUDIT_WORKSPACES"
           audit_args=()
@@ -77,7 +87,90 @@ jobs:
             [[ "$workspace" =~ ^(@[a-z0-9._-]+/)?[a-z0-9._-]+$ ]]
             audit_args+=("--workspace=$workspace")
           done
-          npm audit --audit-level=high --omit=dev "${audit_args[@]}"
+
+          # No allowlist: behave exactly as before, so callers that do not set
+          # the input see no change in behaviour or exit code.
+          if [[ -z "${NPM_AUDIT_ALLOWLIST//[[:space:]]/}" ]]; then
+            npm audit --audit-level=high --omit=dev "${audit_args[@]}"
+            exit $?
+          fi
+
+          # `npm audit --json` exits non-zero when it finds anything, so the
+          # exit code is deliberately discarded here — the gate below decides.
+          npm audit --json --omit=dev "${audit_args[@]}" > npm-audit.json || true
+
+          python3 - npm-audit.json <<'AUDIT_GATE'
+          """Fail on any high/critical vulnerability not fully covered by the allowlist.
+
+          A vulnerability is tolerated only when the COMPLETE set of advisories it
+          stems from is a subset of the allowlist. If a package later picks up an
+          unrelated advisory, its advisory set stops being a subset and the gate
+          fails again — so this never blanket-exempts a package.
+
+          A vulnerability whose advisories cannot be attributed yields an empty
+          set, which is treated as blocking. Fail closed, not open.
+          """
+          import json
+          import os
+          import re
+          import sys
+
+          ADVISORY_ID = re.compile(r"^(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}|CVE-\d{4}-\d+)$")
+
+          raw = os.environ.get("NPM_AUDIT_ALLOWLIST", "").split()
+          bad = [t for t in raw if not ADVISORY_ID.match(t)]
+          if bad:
+              print(f"audit_allowlist contains entries that are not GHSA/CVE ids: {bad}")
+              sys.exit(1)
+          allowlist = set(raw)
+
+
+          def advisory_ids(name, vulns, seen=None):
+              """Every advisory id a vulnerability stems from, resolving string `via` refs."""
+              seen = seen or set()
+              if name in seen:
+                  return set()
+              seen.add(name)
+              entry = vulns.get(name)
+              if not entry:
+                  return set()
+              ids = set()
+              for via in entry.get("via", []):
+                  if isinstance(via, str):
+                      ids |= advisory_ids(via, vulns, seen)
+                  elif isinstance(via, dict):
+                      url = via.get("url", "")
+                      ident = url.rstrip("/").split("/")[-1] if url else ""
+                      if ident:
+                          ids.add(ident)
+              return ids
+
+
+          with open(sys.argv[1]) as handle:
+              vulns = json.load(handle).get("vulnerabilities", {})
+
+          blocking = []
+          for name, entry in sorted(vulns.items()):
+              if entry.get("severity") not in ("high", "critical"):
+                  continue
+              ids = advisory_ids(name, vulns)
+              if ids and ids <= allowlist:
+                  print(f"  allowlisted: {name} ({entry.get('severity')}) -> {sorted(ids)}")
+                  continue
+              blocking.append((entry.get("severity"), name, sorted(ids)))
+
+          if blocking:
+              print("BLOCKING high/critical vulnerabilities:")
+              for severity, name, ids in blocking:
+                  print(f"  {severity}: {name} {ids}")
+              sys.exit(1)
+
+          unused = allowlist - {i for n in vulns for i in advisory_ids(n, vulns)}
+          if unused:
+              print(f"note: allowlist entries no longer matched by any advisory: {sorted(unused)}")
+              print("      these can probably be removed.")
+          print("npm audit gate passed (allowlisted advisories excluded).")
+          AUDIT_GATE
 
       - name: Build
         run: npm run build
