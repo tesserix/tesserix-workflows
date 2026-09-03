@@ -115,6 +115,14 @@ class ReusableWorkflowContract(unittest.TestCase):
         )
         self.assertNotIn("RUSTSEC-", read(WORKFLOWS / "rust-ci.yml"))
 
+    def test_rust_workflow_installs_protoc_only_through_a_boolean_gate(self) -> None:
+        workflow = read(WORKFLOWS / "rust-ci.yml")
+
+        self.assertIn("protoc_enabled:", workflow)
+        self.assertEqual(workflow.count("if: ${{ inputs.protoc_enabled }}"), 2)
+        self.assertEqual(workflow.count("sudo apt-get install -y protobuf-compiler"), 2)
+        self.assertNotIn("apt_packages:", workflow)
+
     def test_nextjs_workflow_enforces_the_complete_framework_gate(self) -> None:
         self.assert_workflow_contains(
             "nextjs-ci.yml",
