@@ -1,0 +1,94 @@
+name: Python CI with baked dependencies
+
+on:
+  workflow_call:
+    inputs:
+      container_image:
+        description: Digest-pinned image containing approved runtime dependencies
+        type: string
+        required: true
+      working_directory:
+        description: Directory containing pyproject.toml and uv.lock
+        type: string
+        default: .
+      uv_version:
+        description: uv version
+        type: string
+        default: 0.12.5
+      source_directory:
+        description: Typed package source directory
+        type: string
+        default: src
+      coverage_min_lines:
+        description: Minimum total line coverage percentage
+        type: number
+        default: 70
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Validate immutable container image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require digest-pinned image
+        env:
+          CONTAINER_IMAGE: ${{ inputs.container_image }}
+        run: |
+          if [[ ! "$CONTAINER_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]; then
+            echo "container_image must be pinned by a lowercase SHA-256 digest" >&2
+            exit 1
+          fi
+
+  quality:
+    name: Python quality
+    needs: preflight
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ inputs.container_image }}
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+    env:
+      UV_PROJECT_ENVIRONMENT: /opt/adk-venv
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ inputs.uv_version }}
+          enable-cache: true
+          cache-dependency-glob: ${{ inputs.working_directory }}/uv.lock
+
+      - name: Install locked project dependencies
+        run: uv sync --frozen --inexact
+
+      - name: Format
+        run: uv run --no-sync ruff format --check .
+
+      - name: Lint
+        run: uv run --no-sync ruff check .
+
+      - name: Typecheck
+        env:
+          SOURCE_DIRECTORY: ${{ inputs.source_directory }}
+        run: uv run --no-sync mypy --strict "$SOURCE_DIRECTORY"
+
+      - name: Test with coverage
+        env:
+          COVERAGE_MIN: ${{ inputs.coverage_min_lines }}
+          SOURCE_DIRECTORY: ${{ inputs.source_directory }}
+        run: >-
+          uv run --no-sync pytest --cov="$SOURCE_DIRECTORY" --cov-report=term-missing
+          --cov-fail-under="$COVERAGE_MIN"
+
+      - name: Audit installed dependencies
+        run: uv run --with pip-audit==2.9.0 pip-audit
+
+      - name: Build package
+        run: uv build

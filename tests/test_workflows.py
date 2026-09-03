@@ -18,6 +18,7 @@ REUSABLE_WORKFLOWS = {
     "go-ci.yml",
     "nextjs-ci.yml",
     "python-ci.yml",
+    "python-baked-deps-ci.yml",
     "rust-ci.yml",
     "secret-scan.yml",
 }
@@ -95,6 +96,27 @@ class ReusableWorkflowContract(unittest.TestCase):
             r"(?s)  python:.*?secrets:\s+package_read_token: "
             r"\$\{\{ secrets\.package_read_token \}\}.*?\n\n  rust:",
         )
+
+    def test_baked_dependency_python_workflow_validates_image_before_quality_job(self) -> None:
+        workflow = read(WORKFLOWS / "python-baked-deps-ci.yml")
+        self.assert_workflow_contains(
+            "python-baked-deps-ci.yml",
+            "container_image:",
+            "Validate immutable container image",
+            "needs: preflight",
+            "image: ${{ inputs.container_image }}",
+            "options: --user root",
+            "uv sync --frozen --inexact",
+            "ruff format --check",
+            "ruff check",
+            "mypy --strict",
+            "pytest --cov",
+            "--cov-fail-under",
+            "pip-audit",
+            "uv build",
+        )
+        self.assertIn("@sha256:[a-f0-9]{64}$", workflow)
+        self.assertNotRegex(workflow, r"\b(?:build|lint|test|run)_command:")
 
     def test_rust_workflow_enforces_quality_and_optional_database_coverage(
         self,
