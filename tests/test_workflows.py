@@ -251,6 +251,7 @@ class ReusableWorkflowContract(unittest.TestCase):
             "validate_images:",
             "name: Container contract",
             "images must be a non-empty JSON array",
+            "then {include: .}",
             "needs: validate_images",
             "fromJSON(needs.validate_images.outputs.images)",
         )
