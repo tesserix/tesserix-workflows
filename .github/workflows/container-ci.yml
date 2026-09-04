@@ -46,12 +46,31 @@ permissions:
   contents: read
 
 jobs:
+  validate_images:
+    name: Container contract
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.images.outputs.matrix }}
+    steps:
+      - name: Validate image matrix
+        id: images
+        env:
+          IMAGES: ${{ inputs.images }}
+        run: |
+          images="$(jq -ce '
+            if type == "array" and length > 0 then .
+            else error("images must be a non-empty JSON array")
+            end
+          ' <<< "$IMAGES")"
+          printf 'matrix=%s\n' "$images" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: validate_images
     name: Container — ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(inputs.images) }}
+      matrix: ${{ fromJSON(needs.validate_images.outputs.images) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 

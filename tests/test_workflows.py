@@ -203,7 +203,7 @@ class ReusableWorkflowContract(unittest.TestCase):
     def test_container_workflows_build_smoke_scan_and_release_by_digest(self) -> None:
         self.assert_workflow_contains(
             "container-ci.yml",
-            "fromJSON(inputs.images)",
+            "fromJSON(needs.validate_images.outputs.images)",
             "docker/build-push-action@",
             "Smoke test image",
             "aquasecurity/trivy-action@",
@@ -239,6 +239,16 @@ class ReusableWorkflowContract(unittest.TestCase):
         )
         self.assertNotIn(
             "REUSABLE_BUILD_SECRET_FP", read(WORKFLOWS / "container-release.yml")
+        )
+
+    def test_container_ci_preflights_the_dynamic_image_matrix(self) -> None:
+        self.assert_workflow_contains(
+            "container-ci.yml",
+            "validate_images:",
+            "name: Container contract",
+            "images must be a non-empty JSON array",
+            "needs: validate_images",
+            "fromJSON(needs.validate_images.outputs.images)",
         )
 
     def test_published_images_carry_a_build_time_that_moves(self) -> None:
