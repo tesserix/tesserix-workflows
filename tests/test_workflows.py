@@ -18,6 +18,7 @@ REUSABLE_WORKFLOWS = {
     "go-ci.yml",
     "nextjs-ci.yml",
     "python-ci.yml",
+    "python-baked-deps-ci.yml",
     "rust-ci.yml",
     "secret-scan.yml",
 }
@@ -95,6 +96,27 @@ class ReusableWorkflowContract(unittest.TestCase):
             r"(?s)  python:.*?secrets:\s+package_read_token: "
             r"\$\{\{ secrets\.package_read_token \}\}.*?\n\n  rust:",
         )
+
+    def test_baked_dependency_python_workflow_validates_image_before_quality_job(self) -> None:
+        workflow = read(WORKFLOWS / "python-baked-deps-ci.yml")
+        self.assert_workflow_contains(
+            "python-baked-deps-ci.yml",
+            "container_image:",
+            "Validate immutable container image",
+            "needs: preflight",
+            "image: ${{ inputs.container_image }}",
+            "options: --user root",
+            "uv sync --frozen --inexact",
+            "ruff format --check",
+            "ruff check",
+            "mypy --strict",
+            "pytest --cov",
+            "--cov-fail-under",
+            "pip-audit",
+            "uv build",
+        )
+        self.assertIn("@sha256:[a-f0-9]{64}$", workflow)
+        self.assertNotRegex(workflow, r"\b(?:build|lint|test|run)_command:")
 
     def test_rust_workflow_enforces_quality_and_optional_database_coverage(
         self,
@@ -211,9 +233,11 @@ class ReusableWorkflowContract(unittest.TestCase):
     def test_container_workflows_build_smoke_scan_and_release_by_digest(self) -> None:
         self.assert_workflow_contains(
             "container-ci.yml",
-            "fromJSON(inputs.images)",
+            "fromJSON(needs.validate_images.outputs.images)",
             "docker/build-push-action@",
             "Smoke test image",
+            "SMOKE_ENVIRONMENT_FILE",
+            "--env-file \"$SMOKE_ENVIRONMENT_FILE\"",
             "aquasecurity/trivy-action@",
             "severity: CRITICAL,HIGH",
             "exit-code: 1",
@@ -232,6 +256,8 @@ class ReusableWorkflowContract(unittest.TestCase):
             "sbom: true",
             "provenance: mode=max",
             "Smoke test published image",
+            "SMOKE_ENVIRONMENT_FILE",
+            "--env-file \"$SMOKE_ENVIRONMENT_FILE\"",
             "steps.build.outputs.digest",
             "cosign sign --yes",
             "target: ${{ matrix.target }}",
@@ -247,6 +273,17 @@ class ReusableWorkflowContract(unittest.TestCase):
         )
         self.assertNotIn(
             "REUSABLE_BUILD_SECRET_FP", read(WORKFLOWS / "container-release.yml")
+        )
+
+    def test_container_ci_preflights_the_dynamic_image_matrix(self) -> None:
+        self.assert_workflow_contains(
+            "container-ci.yml",
+            "validate_images:",
+            "name: Container contract",
+            "images must be a non-empty JSON array",
+            "then {include: .}",
+            "needs: validate_images",
+            "fromJSON(needs.validate_images.outputs.images)",
         )
 
     def test_published_images_carry_a_build_time_that_moves(self) -> None:
