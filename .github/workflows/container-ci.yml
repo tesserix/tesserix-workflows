@@ -83,6 +83,7 @@ jobs:
           SOURCE_ROOT: ${{ matrix.source_root }}
           SMOKE_PATH: ${{ matrix.smoke_path }}
           SMOKE_PORT: ${{ matrix.smoke_port }}
+          SMOKE_ENVIRONMENT_FILE: ${{ matrix.smoke_environment_file }}
           TRIVY_IGNORE_FILE: ${{ matrix.trivy_ignore_file }}
         run: |
           [[ "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]*$ ]]
@@ -90,6 +91,19 @@ jobs:
           [[ -z "$SOURCE_ROOT" || "$SOURCE_ROOT" != *[[:space:]]* ]]
           [[ "$SMOKE_PORT" =~ ^[0-9]+$ ]]
           [[ "$SMOKE_PATH" == /* && "$SMOKE_PATH" != *[[:space:]]* ]]
+          if [[ -n "$SMOKE_ENVIRONMENT_FILE" ]]; then
+            [[ "$SMOKE_ENVIRONMENT_FILE" != /* && "$SMOKE_ENVIRONMENT_FILE" != *".."* ]]
+            [[ "$SMOKE_ENVIRONMENT_FILE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/-]*$ ]]
+            [[ -f "$SMOKE_ENVIRONMENT_FILE" ]]
+            [[ "$(wc -c < "$SMOKE_ENVIRONMENT_FILE")" -le 4096 ]]
+            if grep -Eq '(^|_)(TOKEN|KEY|SECRET|PASSWORD)=' "$SMOKE_ENVIRONMENT_FILE"; then
+              echo "::error::smoke environment files must not contain secret-like variables"
+              exit 1
+            fi
+            while IFS= read -r setting || [[ -n "$setting" ]]; do
+              [[ "$setting" =~ ^[A-Z][A-Z0-9_]*=[^[:cntrl:]]+$ ]]
+            done < "$SMOKE_ENVIRONMENT_FILE"
+          fi
           [[ -z "$TRIVY_IGNORE_FILE" || -f "$TRIVY_IGNORE_FILE" ]]
 
       - name: Prepare protected build inputs
@@ -161,8 +175,13 @@ jobs:
           IMAGE_REF: local/ci-${{ matrix.name }}:${{ github.sha }}
           SMOKE_PATH: ${{ matrix.smoke_path }}
           SMOKE_PORT: ${{ matrix.smoke_port }}
+          SMOKE_ENVIRONMENT_FILE: ${{ matrix.smoke_environment_file }}
         run: |
-          container_id=$(docker run --detach --rm --publish "$SMOKE_PORT:$SMOKE_PORT" "$IMAGE_REF")
+          docker_arguments=(--detach --rm --publish "$SMOKE_PORT:$SMOKE_PORT")
+          if [[ -n "$SMOKE_ENVIRONMENT_FILE" ]]; then
+            docker_arguments+=(--env-file "$SMOKE_ENVIRONMENT_FILE")
+          fi
+          container_id=$(docker run "${docker_arguments[@]}" "$IMAGE_REF")
           trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
           curl --retry 20 --retry-all-errors --retry-delay 1 \
             --retry-max-time 30 --fail --silent --show-error --output /dev/null \
