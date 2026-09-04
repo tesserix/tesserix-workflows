@@ -35,6 +35,10 @@ on:
         description: Prefix allowed in setup-script environment output
         type: string
         default: TEST_DATABASE_
+      protoc_enabled:
+        description: Install the Protocol Buffers compiler for prost build scripts
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -54,6 +58,12 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install Protocol Buffers compiler
+        if: ${{ inputs.protoc_enabled }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
 
       - name: Install Rust toolchain
         env:
@@ -125,6 +135,12 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install Protocol Buffers compiler
+        if: ${{ inputs.protoc_enabled }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
 
       - name: Install Rust toolchain
         env:
