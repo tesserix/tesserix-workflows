@@ -217,6 +217,34 @@ jobs:
             --output "$RUNNER_TEMP/app.ipa"
           test -s "$RUNNER_TEMP/app.ipa"
 
+      # The GitHub log only ever carries the xcpretty-FILTERED xcodebuild
+      # output, which drops script-phase stdout. `eas build --local` already
+      # tees the unfiltered log to
+      #   $TMPDIR/eas-build-local-nodejs/<uuid>/logs/<scheme>-<scheme>.log
+      # so collect it. Without this, a build phase that runs and quietly does
+      # nothing — sentry-cli uploading no source maps, say — is indistinguishable
+      # from one that never ran.
+      - name: Collect unfiltered Xcode logs
+        if: ${{ always() }}
+        run: |
+          dest="$RUNNER_TEMP/xcode-logs"
+          mkdir -p "$dest"
+          found=0
+          while IFS= read -r f; do
+            cp "$f" "$dest/" 2>/dev/null && found=$((found + 1))
+          done < <(find "${TMPDIR:-/tmp}" -path '*eas-build-local-nodejs/*/logs/*.log' -type f 2>/dev/null)
+          echo "collected $found Xcode log file(s)"
+          ls -la "$dest" || true
+
+      - name: Upload unfiltered Xcode logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-logs-${{ inputs.profile }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/xcode-logs
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Submit exact IPA to TestFlight
         if: ${{ inputs.submit && inputs.profile == inputs.production_profile }}
         env:
