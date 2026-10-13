@@ -74,6 +74,22 @@ class ReusableWorkflowContract(unittest.TestCase):
             "coverage_min_lines",
         )
 
+    def test_nextjs_supports_locked_pnpm_without_weakening_gates(self) -> None:
+        self.assert_workflow_contains(
+            "nextjs-ci.yml", "package_manager:", "pnpm_version:",
+            "pnpm install --frozen-lockfile", "pnpm audit --prod --audit-level=high",
+            "pnpm run format:check", "pnpm run lint", "pnpm test",
+            "pnpm run check-types", "pnpm run build", "Validate package manager",
+        )
+
+    def test_go_postgres_is_optional_and_bootstrap_output_is_scoped(self) -> None:
+        self.assert_workflow_contains(
+            "go-ci.yml", "database_enabled:", "database_setup_script:",
+            "database_environment_prefix:", "Prepare database",
+            "inputs.database_enabled && inputs.database_image || ''",
+            "^${ENVIRONMENT_PREFIX}[A-Z0-9_]+$", "go test -race -p 1",
+        )
+
     def test_python_workflow_enforces_the_complete_language_gate(self) -> None:
         self.assert_workflow_contains(
             "python-ci.yml",
