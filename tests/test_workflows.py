@@ -153,6 +153,12 @@ class ReusableWorkflowContract(unittest.TestCase):
         )
         self.assertNotIn("RUSTSEC-", read(WORKFLOWS / "rust-ci.yml"))
 
+    def test_rust_poppler_is_opt_in_for_both_runners(self) -> None:
+        workflow = read(WORKFLOWS / "rust-ci.yml")
+        self.assertRegex(workflow, r"(?s)poppler_enabled:.*?type: boolean.*?default: false")
+        self.assertEqual(workflow.count("if: ${{ inputs.poppler_enabled }}"), 2)
+        self.assertEqual(workflow.count("sudo apt-get install -y poppler-utils"), 2)
+
     def test_rust_workflow_installs_protoc_only_through_a_boolean_gate(self) -> None:
         workflow = read(WORKFLOWS / "rust-ci.yml")
 
