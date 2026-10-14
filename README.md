@@ -78,3 +78,7 @@ Go callers can enable `database_enabled` with a digest-pinned PostgreSQL image a
 database at localhost:5432 (`local`/`local`), then writes only environment assignments
 with `database_environment_prefix` to stdout. Other output belongs on stderr.
 Package tests run serially so database-resetting integration suites cannot race.
+
+Rust callers that exercise native PDF extraction can set `poppler_enabled: true`.
+It installs Poppler on both quality and database runners; the default is false,
+so existing callers retain their current dependency setup.

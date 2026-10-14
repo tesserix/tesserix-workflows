@@ -39,6 +39,10 @@ on:
         description: Install the Protocol Buffers compiler for prost build scripts
         type: boolean
         default: false
+      poppler_enabled:
+        description: Install Poppler utilities for native PDF text tests
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,6 +68,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler
+
+      - name: Install native PDF text test dependency
+        if: ${{ inputs.poppler_enabled }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
 
       - name: Install Rust toolchain
         env:
@@ -141,6 +151,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler
+
+      - name: Install native PDF text test dependency
+        if: ${{ inputs.poppler_enabled }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
 
       - name: Install Rust toolchain
         env:
