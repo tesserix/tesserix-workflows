@@ -116,7 +116,7 @@ jobs:
         env:
           GOBIN: ${{ runner.temp }}/go-tools
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           echo "$GOBIN" >> "$GITHUB_PATH"
 
       - name: Audit dependencies
