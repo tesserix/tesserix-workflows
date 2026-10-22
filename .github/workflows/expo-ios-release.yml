@@ -202,10 +202,26 @@ jobs:
           PRODUCTION_PROFILE: ${{ inputs.production_profile }}
           PROFILE: ${{ inputs.profile }}
           REQUIRE_SENTRY: ${{ inputs.require_sentry_for_production }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.sentry_auth_token }}
+          # Deliberately NOT exported as SENTRY_AUTH_TOKEN. An unset secret
+          # expands to the empty string, and exporting that SHADOWS the token
+          # the build would otherwise pick up from the EAS environment. The
+          # symptom is expensive: the whole native build succeeds, then the
+          # Sentry build phase fails with "Auth token is required for this
+          # request" ~19 minutes in, while `eas build` has already logged that
+          # it loaded SENTRY_AUTH_TOKEN from the EAS environment.
+          SENTRY_AUTH_TOKEN_INPUT: ${{ secrets.sentry_auth_token }}
         run: |
           test -n "$EXPO_TOKEN"
-          if [[ "$PROFILE" == "$PRODUCTION_PROFILE" && "$REQUIRE_SENTRY" == "true" && -z "$SENTRY_AUTH_TOKEN" ]]; then
+          # Only export when we actually have one, so a caller that keeps its
+          # token in EAS is left alone.
+          if [[ -n "$SENTRY_AUTH_TOKEN_INPUT" ]]; then
+            export SENTRY_AUTH_TOKEN="$SENTRY_AUTH_TOKEN_INPUT"
+          fi
+          # This guard can only see a token passed through the workflow. A
+          # caller whose token lives in EAS should leave
+          # require_sentry_for_production false and rely on the Sentry build
+          # phase, which fails the build by default.
+          if [[ "$PROFILE" == "$PRODUCTION_PROFILE" && "$REQUIRE_SENTRY" == "true" && -z "$SENTRY_AUTH_TOKEN_INPUT" ]]; then
             echo "::error::SENTRY_AUTH_TOKEN is required for this production build"
             exit 1
           fi
