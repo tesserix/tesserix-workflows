@@ -4,13 +4,21 @@ on:
   workflow_call:
     inputs:
       working_directory:
-        description: Directory containing package.json and package-lock.json
+        description: Directory containing package.json and the committed lockfile
         type: string
         default: .
       node_version:
         description: Node.js runtime version
         type: string
         default: "22"
+      package_manager:
+        description: Locked dependency manager (npm or pnpm)
+        type: string
+        default: npm
+      pnpm_version:
+        description: Exact pnpm version when package_manager is pnpm
+        type: string
+        default: 10.12.4
       legacy_peer_dependencies:
         description: Install the locked dependency tree using legacy peer resolution
         type: boolean
@@ -47,40 +55,98 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
+      - name: Validate package manager
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+          LEGACY_PEER_DEPENDENCIES: ${{ inputs.legacy_peer_dependencies }}
+          AUDIT_WORKSPACES: ${{ inputs.audit_workspaces }}
+          AUDIT_ALLOWLIST: ${{ inputs.audit_allowlist }}
+        run: |
+          [[ "$PACKAGE_MANAGER" == npm || "$PACKAGE_MANAGER" == pnpm ]]
+          if [[ "$PACKAGE_MANAGER" == pnpm ]]; then
+            [[ "$PNPM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            test "$LEGACY_PEER_DEPENDENCIES" = false
+            test -z "$AUDIT_WORKSPACES"
+            test -z "$AUDIT_ALLOWLIST"
+          fi
+
+      - name: Set up pnpm
+        if: ${{ inputs.package_manager == 'pnpm' }}
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: ${{ inputs.node_version }}
-          cache: npm
-          cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.working_directory }}/${{ inputs.package_manager == 'pnpm' && 'pnpm-lock.yaml' || 'package-lock.json' }}
 
       - name: Install locked dependencies
         env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
           NODE_AUTH_TOKEN: ${{ secrets.package_read_token }}
           LEGACY_PEER_DEPENDENCIES: ${{ inputs.legacy_peer_dependencies }}
         run: |
-          if [[ "$LEGACY_PEER_DEPENDENCIES" == "true" ]]; then
+          if [[ "$PACKAGE_MANAGER" == pnpm ]]; then
+            pnpm install --frozen-lockfile
+          elif [[ "$LEGACY_PEER_DEPENDENCIES" == "true" ]]; then
             npm ci --legacy-peer-deps
           else
             npm ci
           fi
 
       - name: Format
-        run: npm run format:check
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == pnpm ]]; then
+            pnpm run format:check
+          else
+            npm run format:check
+          fi
 
       - name: Lint
-        run: npm run lint
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == pnpm ]]; then
+            pnpm run lint
+          else
+            npm run lint
+          fi
 
       - name: Test
-        run: npm test
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == pnpm ]]; then
+            pnpm test
+          else
+            npm test
+          fi
 
       - name: Typecheck
-        run: npm run check-types
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == pnpm ]]; then
+            pnpm run check-types
+          else
+            npm run check-types
+          fi
 
       - name: Audit production dependencies
         env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
           NPM_AUDIT_WORKSPACES: ${{ inputs.audit_workspaces }}
           NPM_AUDIT_ALLOWLIST: ${{ inputs.audit_allowlist }}
         run: |
+          if [[ "$PACKAGE_MANAGER" == pnpm ]]; then
+            pnpm audit --prod --audit-level=high
+            exit $?
+          fi
           read -r -a workspaces <<< "$NPM_AUDIT_WORKSPACES"
           audit_args=()
           for workspace in "${workspaces[@]}"; do
@@ -173,4 +239,11 @@ jobs:
           AUDIT_GATE
 
       - name: Build
-        run: npm run build
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package_manager }}
+        run: |
+          if [[ "$PACKAGE_MANAGER" == pnpm ]]; then
+            pnpm run build
+          else
+            npm run build
+          fi
