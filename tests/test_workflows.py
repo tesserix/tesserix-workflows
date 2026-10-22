@@ -74,6 +74,22 @@ class ReusableWorkflowContract(unittest.TestCase):
             "coverage_min_lines",
         )
 
+    def test_nextjs_supports_locked_pnpm_without_weakening_gates(self) -> None:
+        self.assert_workflow_contains(
+            "nextjs-ci.yml", "package_manager:", "pnpm_version:",
+            "pnpm install --frozen-lockfile", "pnpm audit --prod --audit-level=high",
+            "pnpm run format:check", "pnpm run lint", "pnpm test",
+            "pnpm run check-types", "pnpm run build", "Validate package manager",
+        )
+
+    def test_go_postgres_is_optional_and_bootstrap_output_is_scoped(self) -> None:
+        self.assert_workflow_contains(
+            "go-ci.yml", "database_enabled:", "database_setup_script:",
+            "database_environment_prefix:", "Prepare database",
+            "inputs.database_enabled && inputs.database_image || ''",
+            "^${ENVIRONMENT_PREFIX}[A-Z0-9_]+$", "go test -race -p 1",
+        )
+
     def test_python_workflow_enforces_the_complete_language_gate(self) -> None:
         self.assert_workflow_contains(
             "python-ci.yml",
@@ -136,6 +152,12 @@ class ReusableWorkflowContract(unittest.TestCase):
             "coverage_min_lines",
         )
         self.assertNotIn("RUSTSEC-", read(WORKFLOWS / "rust-ci.yml"))
+
+    def test_rust_poppler_is_opt_in_for_both_runners(self) -> None:
+        workflow = read(WORKFLOWS / "rust-ci.yml")
+        self.assertRegex(workflow, r"(?s)poppler_enabled:.*?type: boolean.*?default: false")
+        self.assertEqual(workflow.count("if: ${{ inputs.poppler_enabled }}"), 2)
+        self.assertEqual(workflow.count("sudo apt-get install -y poppler-utils"), 2)
 
     def test_rust_workflow_installs_protoc_only_through_a_boolean_gate(self) -> None:
         workflow = read(WORKFLOWS / "rust-ci.yml")

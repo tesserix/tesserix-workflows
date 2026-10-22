@@ -7,11 +7,11 @@ repeatable implementation of quality, security, and image-supply-chain gates.
 | Workflow | Contract |
 | --- | --- |
 | `ci.yml` | Composes enabled capabilities and exposes one stable aggregate gate |
-| `go-ci.yml` | Format, dependency verification, vet, build, race tests, coverage, and vulnerability audit |
+| `go-ci.yml` | Format, dependency verification, vet, build, serial-package race tests, coverage, vulnerability audit, and optional PostgreSQL |
 | `python-ci.yml` | Locked uv install, Ruff, strict mypy, pytest coverage, dependency audit, and package build |
 | `python-baked-deps-ci.yml` | Digest-validated baked dependency image, frozen inexact uv sync, Python quality, audit, and build |
 | `rust-ci.yml` | Format, Clippy, build, tests, audit, coverage, and optional Postgres integration coverage |
-| `nextjs-ci.yml` | Locked npm install, format, lint, tests, typecheck, workspace-scoped audit, and production build |
+| `nextjs-ci.yml` | Locked npm/pnpm install, format, lint, tests, typecheck, workspace-scoped audit, and production build |
 | `expo-ci.yml` | Locked npm/pnpm install, typed routes, typecheck, lint, tests, audit, and Expo Doctor |
 | `expo-eas-build.yml` | Pinned, non-interactive EAS cloud build with optional linked store submission |
 | `expo-ios-release.yml` | Local iOS build on pinned Xcode and submission of that exact IPA to TestFlight |
@@ -68,3 +68,17 @@ actionlint
 ```
 
 The repository required check runs the same contract suite and Actionlint.
+
+Next.js callers may select `package_manager: pnpm` and pin `pnpm_version`.
+The default remains npm. pnpm uses the committed lockfile and the same mandatory
+quality gates; npm-only audit exceptions/workspace options are rejected for pnpm.
+
+Go callers can enable `database_enabled` with a digest-pinned PostgreSQL image and
+`database_setup_script`. The script loads schema into the disposable `app_test`
+database at localhost:5432 (`local`/`local`), then writes only environment assignments
+with `database_environment_prefix` to stdout. Other output belongs on stderr.
+Package tests run serially so database-resetting integration suites cannot race.
+
+Rust callers that exercise native PDF extraction can set `poppler_enabled: true`.
+It installs Poppler on both quality and database runners; the default is false,
+so existing callers retain their current dependency setup.

@@ -11,6 +11,22 @@ on:
         description: Go toolchain version
         type: string
         default: 1.26.x
+      database_enabled:
+        description: Run quality checks against a disposable PostgreSQL service
+        type: boolean
+        default: false
+      database_image:
+        description: Immutable PostgreSQL image
+        type: string
+        default: postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
+      database_setup_script:
+        description: Repository-relative schema bootstrap script
+        type: string
+        default: ""
+      database_environment_prefix:
+        description: Allowed prefix for bootstrap environment output
+        type: string
+        default: TEST_DATABASE_
       coverage_min_lines:
         description: Minimum total line coverage percentage
         type: number
@@ -23,6 +39,17 @@ jobs:
   quality:
     name: Go quality
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: ${{ inputs.database_enabled && inputs.database_image || '' }}
+        env:
+          POSTGRES_USER: local
+          POSTGRES_PASSWORD: local
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 20
     defaults:
       run:
         shell: bash
@@ -34,6 +61,28 @@ jobs:
         with:
           go-version: ${{ inputs.go_version }}
           cache-dependency-path: ${{ inputs.working_directory }}/go.sum
+
+      - name: Prepare database
+        if: ${{ inputs.database_enabled }}
+        env:
+          DATABASE_IMAGE: ${{ inputs.database_image }}
+          ENVIRONMENT_PREFIX: ${{ inputs.database_environment_prefix }}
+          SETUP_SCRIPT: ${{ inputs.database_setup_script }}
+          PGPASSWORD: local
+        run: |
+          [[ "$DATABASE_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]
+          [[ "$SETUP_SCRIPT" != /* && "$SETUP_SCRIPT" != *".."* ]]
+          [[ "$ENVIRONMENT_PREFIX" =~ ^[A-Z][A-Z0-9_]*_$ ]]
+          test -f "$GITHUB_WORKSPACE/$SETUP_SCRIPT"
+          setup_output=$(mktemp)
+          bash "$GITHUB_WORKSPACE/$SETUP_SCRIPT" > "$setup_output"
+          while IFS= read -r line; do
+            key=${line%%=*}
+            [[ "$key" =~ ^${ENVIRONMENT_PREFIX}[A-Z0-9_]+$ ]]
+            [[ "$line" == *=* ]]
+            printf '%s\n' "$line" >> "$GITHUB_ENV"
+          done < "$setup_output"
+          rm -f "$setup_output"
 
       - name: Verify dependencies
         run: go mod verify
@@ -53,7 +102,7 @@ jobs:
         run: go build ./...
 
       - name: Test with race detection and coverage
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+        run: go test -race -p 1 -covermode=atomic -coverprofile=coverage.out ./...
 
       - name: Enforce coverage floor
         env:
@@ -67,7 +116,7 @@ jobs:
         env:
           GOBIN: ${{ runner.temp }}/go-tools
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           echo "$GOBIN" >> "$GITHUB_PATH"
 
       - name: Audit dependencies
